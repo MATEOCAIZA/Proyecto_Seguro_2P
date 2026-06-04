@@ -1,0 +1,9 @@
+# .gitignore
+.env
+*.env
+__pycache__/
+venv/
+env/
+target/
+*.pkl
+*.joblib

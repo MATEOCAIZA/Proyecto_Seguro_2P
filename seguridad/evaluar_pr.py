@@ -1,0 +1,189 @@
+"""
+evaluar_pr.py — Script de CI/CD para GitHub Actions
+
+Flujo:
+  1. Lee los archivos .java modificados en el Pull Request actual
+  2. Envía cada archivo al microservicio FastAPI desplegado (api_modelo.py)
+  3. Si algún archivo es vulnerable → sys.exit(1) → el workflow falla → PR bloqueado
+  4. Si todos son seguros → sys.exit(0) → el workflow continúa → PR aprobado
+
+Variables de entorno requeridas (se configuran en GitHub Actions):
+  - GITHUB_TOKEN      : Token de autenticación de GitHub (provisto automáticamente)
+  - PR_NUMBER         : Número del PR en curso
+  - MODELO_API_URL    : URL del microservicio FastAPI desplegado (ej: https://mi-api.railway.app)
+  - TELEGRAM_TOKEN    : (Opcional) Token del bot de Telegram para notificaciones
+  - TELEGRAM_CHAT_ID  : (Opcional) Chat ID para notificaciones de Telegram
+  - GITHUB_REPOSITORY : Nombre del repositorio en formato "owner/repo" (provisto automáticamente)
+"""
+
+import os
+import sys
+import httpx
+import requests
+from github import Github
+
+# ─────────────────────────────────────────────────────────
+# 1. Leer variables de entorno
+# ─────────────────────────────────────────────────────────
+GITHUB_TOKEN    = os.environ.get("GITHUB_TOKEN")
+PR_NUMBER       = int(os.environ.get("PR_NUMBER", 0))
+REPO_NAME       = os.environ.get("GITHUB_REPOSITORY")       # owner/repo
+MODELO_API_URL  = os.environ.get("MODELO_API_URL", "http://localhost:8000")
+TELEGRAM_TOKEN  = os.environ.get("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+
+def enviar_telegram(mensaje: str):
+    """Envía notificación a Telegram si las credenciales están configuradas."""
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        return
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": mensaje}, timeout=10)
+    except Exception as e:
+        print(f"⚠️  No se pudo enviar notificación a Telegram: {e}")
+
+# ─────────────────────────────────────────────────────────
+# 2. Verificar que el microservicio esté disponible
+# ─────────────────────────────────────────────────────────
+def verificar_microservicio():
+    """Comprueba que la API del modelo esté corriendo antes de analizar."""
+    try:
+        respuesta = httpx.get(f"{MODELO_API_URL}/health", timeout=15)
+        respuesta.raise_for_status()
+        data = respuesta.json()
+        if not data.get("modelo_cargado", False):
+            print("❌ El microservicio está activo pero el modelo ML no está cargado.")
+            sys.exit(1)
+        print(f"✅ Microservicio disponible — modelo cargado: {data.get('modelo_cargado')}")
+    except httpx.ConnectError:
+        print(f"❌ No se pudo conectar al microservicio en: {MODELO_API_URL}")
+        print("   Verifica que MODELO_API_URL esté configurado correctamente en los secrets de GitHub.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"❌ Error al verificar el microservicio: {e}")
+        sys.exit(1)
+
+# ─────────────────────────────────────────────────────────
+# 3. Obtener archivos Java del PR via GitHub API
+# ─────────────────────────────────────────────────────────
+def obtener_archivos_java_del_pr():
+    """Retorna una lista de tuplas (nombre_archivo, contenido) con los .java del PR."""
+    g = Github(GITHUB_TOKEN)
+    repo = g.get_repo(REPO_NAME)
+    pr = repo.get_pull(PR_NUMBER)
+
+    archivos_java = []
+    for archivo in pr.get_files():
+        if archivo.filename.endswith(".java") and archivo.status != "removed":
+            try:
+                # Obtener el contenido del archivo en la rama del PR
+                contenido = repo.get_contents(
+                    archivo.filename,
+                    ref=pr.head.sha
+                )
+                codigo = contenido.decoded_content.decode("utf-8")
+                archivos_java.append((archivo.filename, codigo))
+                print(f"   📄 Encontrado: {archivo.filename}")
+            except Exception as e:
+                print(f"   ⚠️  No se pudo leer {archivo.filename}: {e}")
+
+    return archivos_java
+
+# ─────────────────────────────────────────────────────────
+# 4. Analizar un archivo contra el microservicio
+# ─────────────────────────────────────────────────────────
+def analizar_archivo(nombre_archivo: str, codigo_fuente: str) -> dict:
+    """Envía el código al microservicio FastAPI y retorna el resultado del análisis."""
+    payload = {
+        "codigo_fuente": codigo_fuente,
+        "nombre_archivo": nombre_archivo
+    }
+    try:
+        respuesta = httpx.post(
+            f"{MODELO_API_URL}/analizar-codigo",
+            json=payload,
+            timeout=60   # El análisis del modelo puede tomar varios segundos
+        )
+        respuesta.raise_for_status()
+        return respuesta.json()
+    except httpx.HTTPStatusError as e:
+        print(f"   ❌ Error HTTP al analizar {nombre_archivo}: {e.response.status_code} — {e.response.text}")
+        return {"es_seguro": False, "vulnerabilidades_detectadas": [], "error": str(e)}
+    except Exception as e:
+        print(f"   ❌ Error inesperado al analizar {nombre_archivo}: {e}")
+        return {"es_seguro": False, "vulnerabilidades_detectadas": [], "error": str(e)}
+
+# ─────────────────────────────────────────────────────────
+# 5. Punto de entrada principal
+# ─────────────────────────────────────────────────────────
+def main():
+    print("=" * 60)
+    print(f"🔍 Iniciando análisis de seguridad — PR #{PR_NUMBER}")
+    print(f"   Repositorio : {REPO_NAME}")
+    print(f"   API Modelo  : {MODELO_API_URL}")
+    print("=" * 60)
+
+    # 5.1 Verificar que el microservicio esté disponible
+    verificar_microservicio()
+
+    # 5.2 Obtener los archivos Java del PR
+    print("\n📂 Obteniendo archivos Java modificados en el PR...")
+    archivos = obtener_archivos_java_del_pr()
+
+    if not archivos:
+        print("\n✅ No se encontraron archivos .java modificados. El PR es seguro por defecto.")
+        enviar_telegram(f"✅ PR #{PR_NUMBER} en {REPO_NAME}: No hay archivos Java para analizar. Continuando...")
+        sys.exit(0)
+
+    print(f"\n🤖 Analizando {len(archivos)} archivo(s) con el modelo ML...")
+    print("-" * 60)
+
+    # 5.3 Analizar cada archivo
+    vulnerabilidades_totales = []
+    archivos_vulnerables = []
+
+    for nombre, codigo in archivos:
+        print(f"\n▶  Analizando: {nombre}")
+        resultado = analizar_archivo(nombre, codigo)
+
+        es_seguro = resultado.get("es_seguro", False)
+        vulns = resultado.get("vulnerabilidades_detectadas", [])
+
+        if es_seguro:
+            total_metodos = resultado.get("total_metodos_analizados", "N/A")
+            print(f"   ✅ SEGURO — {total_metodos} método(s) analizados sin vulnerabilidades.")
+        else:
+            print(f"   ❌ VULNERABLE — {len(vulns)} método(s) con riesgo detectado:")
+            for v in vulns:
+                print(f"      • Método '{v['metodo']}' — Probabilidad: {v['probabilidad_vulnerable']}%")
+            vulnerabilidades_totales.extend(vulns)
+            archivos_vulnerables.append(nombre)
+
+    print("\n" + "=" * 60)
+
+    # 5.4 Resultado final
+    if archivos_vulnerables:
+        resumen_vulns = "\n".join(
+            [f"  - {a}" for a in archivos_vulnerables]
+        )
+        mensaje_fallo = (
+            f"🚨 PR #{PR_NUMBER} BLOQUEADO — Código vulnerable detectado en:\n"
+            f"{resumen_vulns}\n"
+            f"Repositorio: {REPO_NAME}"
+        )
+        print(f"❌ ANÁLISIS FALLIDO — PR BLOQUEADO")
+        print(f"   Archivos vulnerables:\n{resumen_vulns}")
+        enviar_telegram(mensaje_fallo)
+        sys.exit(1)  # ← Falla el workflow → GitHub bloquea el merge
+    else:
+        mensaje_ok = (
+            f"✅ PR #{PR_NUMBER} APROBADO — Todo el código Java es seguro.\n"
+            f"Repositorio: {REPO_NAME}\n"
+            f"Archivos analizados: {len(archivos)}"
+        )
+        print(f"✅ ANÁLISIS EXITOSO — Todo el código es seguro. Continuando con pruebas Java...")
+        enviar_telegram(mensaje_ok)
+        sys.exit(0)  # ← El workflow continúa → se ejecutan los tests Java
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,22 @@
+spring:
+  application:
+    name: zonas
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/zonas_db}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:12345}
+    driver-class-name: org.postgresql.Driver
+  
+  jpa:
+    hibernate:
+      ddl-auto: update 
+    show-sql: true 
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+
+# Microservicio de análisis de vulnerabilidades (FastAPI Python)
+analisis:
+  microservicio:
+    url: ${MODELO_API_URL:http://localhost:8000}

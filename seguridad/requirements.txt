@@ -1,0 +1,16 @@
+# Modelo ML
+scikit-learn
+pandas
+joblib
+javalang
+
+# API Server (FastAPI)
+fastapi
+uvicorn[standard]
+
+# Cliente HTTP (para evaluar_pr.py)
+httpx
+requests
+
+# GitHub API
+PyGithub
