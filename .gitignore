@@ -5,5 +5,5 @@ __pycache__/
 venv/
 env/
 target/
-*.pkl
+
 *.joblib
