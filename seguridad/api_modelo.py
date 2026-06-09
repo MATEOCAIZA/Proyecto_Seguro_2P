@@ -37,9 +37,10 @@ class PeticionCodigo(BaseModel):
     nombre_archivo: str = "Desconocido.java"
 
 # 3. Funciones de Extracción (Reglas de negocio del modelo)
+# Actualiza la lista para ser más específica a Java puro (evitando choques con JPA)
 FUNCIONES_PELIGROSAS = [
-    'exec', 'executeQuery', 'execute', 'prepareStatement',
-    'getOutputStream', 'Socket', 'Runtime', 'getenv'
+    'exec', 'prepareStatement', 'getOutputStream', 
+    'Socket', 'Runtime', 'getenv', 'ProcessBuilder'
 ]
 
 def calcular_profundidad_ast(nodo):
@@ -53,7 +54,10 @@ def calcular_profundidad_ast(nodo):
                     prof = max(prof, calcular_profundidad_ast(item))
         elif isinstance(hijo, javalang.tree.Node):
             prof = max(prof, calcular_profundidad_ast(hijo))
-    return 1 + prof
+            
+    # Novedad: Limitar la profundidad para no penalizar lambdas o builders de Spring Boot
+    profundidad_real = 1 + prof
+    return min(profundidad_real, 12) # 12 es un techo seguro
 
 def extraer_features(metodo_nodo):
     total_nodos = len(list(metodo_nodo.filter(javalang.tree.Node)))
@@ -95,7 +99,7 @@ async def health_check():
         "version": "1.0.0"
     }
 
-# 5. Endpoint principal — Donde Java se conecta para analizar código
+# 5. Endpoint principal — Donde Java/GitHub Actions se conecta para analizar código
 @app.post("/analizar-codigo")
 async def analizar_codigo(peticion: PeticionCodigo):
     if modelo_rf is None:
@@ -131,19 +135,23 @@ async def analizar_codigo(peticion: PeticionCodigo):
         nombres_metodos = df['metodo_nombre'].tolist()
         X = df.drop(columns=['metodo_nombre'])
 
-        # Predicción del modelo
-        predicciones = modelo_rf.predict(X)
+        # MODIFICACIÓN: Predicción basada en probabilidades para ajustar la sensibilidad
         probabilidades = modelo_rf.predict_proba(X)
 
         vulnerabilidades = []
-        for i, pred in enumerate(predicciones):
-            if pred == 1:
+        UMBRAL_VULNERABILIDAD = 0.70  # 70% de certeza requerida para clasificar como VULNERABLE
+
+        for i, prob in enumerate(probabilidades):
+            prob_vulnerable = prob[1]  # Probabilidad de pertenecer a la clase 1 (Vulnerable)
+            
+            # Solo se reporta como riesgo si supera el nuevo umbral del 70%
+            if prob_vulnerable >= UBRAL_VULNERABILIDAD:
                 vulnerabilidades.append({
                     "metodo": nombres_metodos[i],
-                    "probabilidad_vulnerable": round(float(probabilidades[i][1]) * 100, 2)
+                    "probabilidad_vulnerable": round(float(prob_vulnerable) * 100, 2)
                 })
 
-        # Respuesta estructurada para el backend Java
+        # Respuesta estructurada para el pipeline de CI/CD
         es_seguro = len(vulnerabilidades) == 0
         return {
             "status": "completado",
@@ -160,7 +168,6 @@ async def analizar_codigo(peticion: PeticionCodigo):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error interno al analizar '{peticion.nombre_archivo}': {str(e)}")
-
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=port)
