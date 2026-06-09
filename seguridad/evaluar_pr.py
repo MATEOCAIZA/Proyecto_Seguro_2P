@@ -21,6 +21,7 @@ import sys
 import httpx
 import requests
 from github import Github
+from github import Auth
 
 # ─────────────────────────────────────────────────────────
 # 1. Leer variables de entorno
@@ -86,7 +87,8 @@ def verificar_microservicio():
 # ─────────────────────────────────────────────────────────
 def obtener_archivos_java_del_pr():
     """Retorna una lista de tuplas (nombre_archivo, contenido) con los .java del PR."""
-    g = Github(GITHUB_TOKEN)
+    auth = Auth.Token(GITHUB_TOKEN)
+    g = Github(auth=auth)
     repo = g.get_repo(REPO_NAME)
     pr = repo.get_pull(PR_NUMBER)
 
