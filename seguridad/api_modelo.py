@@ -145,7 +145,7 @@ async def analizar_codigo(peticion: PeticionCodigo):
             prob_vulnerable = prob[1]  # Probabilidad de pertenecer a la clase 1 (Vulnerable)
             
             # Solo se reporta como riesgo si supera el nuevo umbral del 70%
-            if prob_vulnerable >= UBRAL_VULNERABILIDAD:
+            if prob_vulnerable >= UMBRAL_VULNERABILIDAD:
                 vulnerabilidades.append({
                     "metodo": nombres_metodos[i],
                     "probabilidad_vulnerable": round(float(prob_vulnerable) * 100, 2)
