@@ -16,6 +16,14 @@ jobs:
   security_scan:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    
+    # CAMBIO 1: Permisos de escritura necesarios para que evaluar_pr.py 
+    # pueda comentar el PR, crear la issue vinculada y asignar la etiqueta fixing-required
+    permissions:
+      pull-requests: write
+      issues: write
+      contents: write
+
     steps:
       - name: Descargar código del PR
         uses: actions/checkout@v3
@@ -37,14 +45,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           MODELO_API_URL: ${{ secrets.MODELO_API_URL }}
-          #TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          #TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # CAMBIO 2: Descomentadas las variables de Telegram para inyectar los secrets al script
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           cd seguridad
           python evaluar_pr.py
-
-
-  # ==========================================
-  # ETAPA 2: PRUEBAS EN JAVA
-  # ==========================================
- 

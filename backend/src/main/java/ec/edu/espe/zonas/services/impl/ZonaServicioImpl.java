@@ -56,7 +56,17 @@ public class ZonaServicioImpl implements ZonaServicio {
 
     @Override
     public ZonaResponseDto actualizarZona(UUID idZona, ZonaRequestDto request){
-        return null;
+                Zona objZona = repositorioZona.findById(idZona)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Zona no encontrada con id: " + idZona));
+
+        objZona.setNombre(request.getNombre());
+        objZona.setDescripcion(request.getDescripcion());
+        objZona.setCapacidad(request.getCapacidad());
+        //objZona.setTipo(request.getTipo());
+        objZona.setFechaModificacion(LocalDateTime.now());
+
+        Zona zonaActualizada = repositorioZona.save(objZona);
+        return toResponse(zonaActualizada);
     }
 
     @Override 

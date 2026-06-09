@@ -123,6 +123,9 @@ def main():
     print(f"   API Modelo  : {MODELO_API_URL}")
     print("=" * 60)
 
+    # 5.0 Enviar notificación obligatoria de inicio a Telegram
+    enviar_telegram(f"⏳ Inicio de revisión de seguridad: Evaluando PR #{PR_NUMBER} en {REPO_NAME}...")
+
     # 5.1 Verificar que el microservicio esté disponible
     verificar_microservicio()
 
@@ -161,29 +164,55 @@ def main():
 
     print("\n" + "=" * 60)
 
+    # Instanciar cliente de GitHub para interactuar con el PR y el Repo
+    g = Github(GITHUB_TOKEN)
+    repo = g.get_repo(REPO_NAME)
+    pr = repo.get_pull(PR_NUMBER)
+
     # 5.4 Resultado final
     if archivos_vulnerables:
-        resumen_vulns = "\n".join(
-            [f"  - {a}" for a in archivos_vulnerables]
-        )
+        # Construir comentario detallado para GitHub
+        detalle_vulns = "### 🚨 Análisis de Seguridad: Código Vulnerable Detectado\n\nEl modelo de minería de datos ha clasificado este código como riesgoso. Detalles:\n"
+        for v in vulnerabilidades_totales:
+            detalle_vulns += f"- **Método/Función:** `{v['metodo']}` | **Probabilidad:** {v['probabilidad_vulnerable']}%\n"
+        
+        # 1. Crear comentario en el PR
+        pr.create_issue_comment(detalle_vulns)
+        
+        # 2. Aplicar etiqueta al PR
+        try:
+            pr.add_to_labels("fixing-required")
+        except Exception as e:
+            print(f"⚠️ No se pudo aplicar la etiqueta (¿existe en el repo?): {e}")
+
+        # 3. Crear un Issue automático vinculado
+        titulo_issue = f"Corregir vulnerabilidades introducidas en PR #{PR_NUMBER}"
+        cuerpo_issue = f"Se ha bloqueado el PR #{PR_NUMBER} debido a código vulnerable.\n\n{detalle_vulns}\n\nPor favor, revisa y corrige el código antes de intentar un nuevo merge."
+        repo.create_issue(title=titulo_issue, body=cuerpo_issue)
+
+        # 4. Notificar a Telegram
+        resumen_archivos = "\n".join([f"  - {a}" for a in archivos_vulnerables])
         mensaje_fallo = (
-            f"🚨 PR #{PR_NUMBER} BLOQUEADO — Código vulnerable detectado en:\n"
-            f"{resumen_vulns}\n"
+            f"🚨 PR #{PR_NUMBER} RECHAZADO — Código vulnerable\n"
+            f"Archivos afectados:\n{resumen_archivos}\n"
             f"Repositorio: {REPO_NAME}"
         )
         print(f"❌ ANÁLISIS FALLIDO — PR BLOQUEADO")
-        print(f"   Archivos vulnerables:\n{resumen_vulns}")
         enviar_telegram(mensaje_fallo)
-        sys.exit(1)  # ← Falla el workflow → GitHub bloquea el merge
+        
+        # Falla el workflow -> GitHub bloquea el merge
+        sys.exit(1) 
     else:
         mensaje_ok = (
-            f"✅ PR #{PR_NUMBER} APROBADO — Todo el código Java es seguro.\n"
+            f"✅ PR #{PR_NUMBER} APROBADO — Análisis seguro.\n"
             f"Repositorio: {REPO_NAME}\n"
-            f"Archivos analizados: {len(archivos)}"
+            f"Archivos revisados: {len(archivos)}"
         )
-        print(f"✅ ANÁLISIS EXITOSO — Todo el código es seguro. Continuando con pruebas Java...")
+        print(f"✅ ANÁLISIS EXITOSO — Todo el código es seguro.")
         enviar_telegram(mensaje_ok)
-        sys.exit(0)  # ← El workflow continúa → se ejecutan los tests Java
+        
+        # El workflow continúa -> se ejecutan los tests
+        sys.exit(0) 
 
 if __name__ == "__main__":
     main()

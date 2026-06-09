@@ -4,8 +4,10 @@ import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import ec.edu.espe.zonas.dtos.EspacioRequestDto;
 import ec.edu.espe.zonas.dtos.EspacioResponseDto;
@@ -36,8 +38,16 @@ public class EspacioServicioImpl implements EspacioServicio {
 
     @Override
     public EspacioResponseDto crearEspacio(EspacioRequestDto dto) {
-        Zona objZona = repositorioZona.findById(dto.getIdZona())
+     Zona objZona = repositorioZona.findById(dto.getIdZona())
                 .orElseThrow(() -> new RuntimeException("Zona no encontrado con id: " + dto.getIdZona()));
+
+        // Validar que no se supere la capacidad de la zona
+        int espaciosActuales = objZona.getEspacios() != null ? objZona.getEspacios().size() : 0;
+        if (espaciosActuales >= objZona.getCapacidad()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "La zona ya alcanzó su capacidad máxima de " + objZona.getCapacidad() + " espacios");
+        }
+
         Espacio nuevoEspacio = mapper.toEntityEspacio(dto);
         nuevoEspacio.setCodigo(generarCodigo(dto, objZona));
         nuevoEspacio.setZona(objZona);
