@@ -46,23 +46,41 @@ def enviar_telegram(mensaje: str):
 # 2. Verificar que el microservicio esté disponible
 # ─────────────────────────────────────────────────────────
 def verificar_microservicio():
-    """Comprueba que la API del modelo esté corriendo antes de analizar."""
-    try:
-        respuesta = httpx.get(f"{MODELO_API_URL}/health", timeout=15)
-        respuesta.raise_for_status()
-        data = respuesta.json()
-        if not data.get("modelo_cargado", False):
-            print("❌ El microservicio está activo pero el modelo ML no está cargado.")
-            sys.exit(1)
-        print(f"✅ Microservicio disponible — modelo cargado: {data.get('modelo_cargado')}")
-    except httpx.ConnectError:
-        print(f"❌ No se pudo conectar al microservicio en: {MODELO_API_URL}")
-        print("   Verifica que MODELO_API_URL esté configurado correctamente en los secrets de GitHub.")
-        sys.exit(1)
-    except Exception as e:
-        print(f"❌ Error al verificar el microservicio: {e}")
-        sys.exit(1)
+    """Comprueba que la API del modelo esté corriendo, tolerando 'cold starts' de servidores gratuitos."""
+    import time
+    max_reintentos = 3
+    tiempo_espera = 20 # Segundos a esperar entre intentos
 
+    for intento in range(max_reintentos):
+        try:
+            print(f"⏳ Verificando microservicio en {MODELO_API_URL} (Intento {intento + 1}/{max_reintentos})...")
+            
+            # Aumentamos el timeout a 40 segundos por petición
+            respuesta = httpx.get(f"{MODELO_API_URL}/health", timeout=40.0)
+            respuesta.raise_for_status()
+            data = respuesta.json()
+            
+            if not data.get("modelo_cargado", False):
+                print("❌ El microservicio está activo pero el modelo ML no está cargado.")
+                sys.exit(1)
+                
+            print(f"✅ Microservicio disponible — modelo cargado: {data.get('modelo_cargado')}")
+            return # Éxito, salimos de la función y el pipeline continúa
+            
+        except httpx.TimeoutException:
+            print(f"⚠️ Timeout. El servidor se está despertando (Cold Start). Esperando {tiempo_espera}s...")
+            time.sleep(tiempo_espera)
+        except httpx.ConnectError:
+             print(f"❌ No se pudo conectar al microservicio en: {MODELO_API_URL}")
+             print("   Verifica que la URL en los secrets de GitHub sea correcta y NO termine con '/'.")
+             sys.exit(1)
+        except Exception as e:
+            print(f"❌ Error HTTP al verificar el microservicio: {e}")
+            sys.exit(1)
+
+    # Si terminan los intentos y no hubo éxito
+    print(f"❌ El microservicio no respondió después de {max_reintentos} intentos. Abortando.")
+    sys.exit(1)
 # ─────────────────────────────────────────────────────────
 # 3. Obtener archivos Java del PR via GitHub API
 # ─────────────────────────────────────────────────────────
