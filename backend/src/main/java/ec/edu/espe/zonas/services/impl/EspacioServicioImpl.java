@@ -4,8 +4,10 @@ import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import ec.edu.espe.zonas.dtos.EspacioRequestDto;
 import ec.edu.espe.zonas.dtos.EspacioResponseDto;
@@ -35,9 +37,18 @@ public class EspacioServicioImpl implements EspacioServicio {
     }
 
     @Override
+    @Transactional
     public EspacioResponseDto crearEspacio(EspacioRequestDto dto) {
         Zona objZona = repositorioZona.findById(dto.getIdZona())
-                .orElseThrow(() -> new RuntimeException("Zona no encontrado con id: " + dto.getIdZona()));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Zona no encontrada"));
+
+        // Validar que no se supere la capacidad de la zona
+        int espaciosActuales = objZona.getEspacios() != null ? objZona.getEspacios().size() : 0;
+        if (espaciosActuales >= objZona.getCapacidad()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "La zona ya alcanzo su capacidad maxima");
+        }
+
         Espacio nuevoEspacio = mapper.toEntityEspacio(dto);
         nuevoEspacio.setCodigo(generarCodigo(dto, objZona));
         nuevoEspacio.setZona(objZona);
@@ -51,10 +62,11 @@ public class EspacioServicioImpl implements EspacioServicio {
     }
 
     @Override
+    @Transactional
     public EspacioResponseDto actualizarEspacio(UUID idEspacio, EspacioRequestDto dto) {
 
         Espacio objEspacio = repositorioEspacio.findById(idEspacio)
-                .orElseThrow(() -> new RuntimeException("Espacio no encontrado con id: " + idEspacio));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Espacio no encontrado"));
 
         objEspacio.setDescripcion(dto.getDescripcion());
         objEspacio.setTipo(dto.getTipo());
@@ -67,9 +79,10 @@ public class EspacioServicioImpl implements EspacioServicio {
     }
 
     @Override
+    @Transactional
     public void eliminarEspacio(UUID idEspacio) {
         Espacio objEspacio = repositorioEspacio.findById(idEspacio)
-                .orElseThrow(() -> new RuntimeException("Espacio no encontrado con id: " + idEspacio));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Espacio no encontrado"));
         objEspacio.setActivo(false);
         objEspacio.setEstado(EstadoEspacio.MANTENIMIENTO);
         objEspacio.setFechaModificacion(java.time.LocalDateTime.now());
@@ -77,9 +90,13 @@ public class EspacioServicioImpl implements EspacioServicio {
     }
 
     @Override
+    @Transactional
     public EspacioResponseDto cambiarEstado(UUID idEspacio, EstadoEspacio estado) {
+        if (estado == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El estado no puede ser nulo");
+        }
         Espacio objEspacio = repositorioEspacio.findById(idEspacio)
-                .orElseThrow(() -> new RuntimeException("Espacio no encontrado con id: " + idEspacio));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Espacio no encontrado"));
         objEspacio.setEstado(estado);
         objEspacio.setFechaModificacion(java.time.LocalDateTime.now());
         Espacio espacioActualizado = repositorioEspacio.save(objEspacio);
@@ -87,6 +104,7 @@ public class EspacioServicioImpl implements EspacioServicio {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<EspacioResponseDto> obtenerEspaciosPorEstado(EstadoEspacio estado) {
         return repositorioEspacio.findByEstado(estado).stream()
                 .map(mapper::toResponseDto)
@@ -94,9 +112,10 @@ public class EspacioServicioImpl implements EspacioServicio {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<EspacioResponseDto> obtenerEspaciosPorZonaPorEstado(UUID idZona, EstadoEspacio estado) {
         Zona objZona = repositorioZona.findById(idZona)
-                .orElseThrow(() -> new RuntimeException("Zona no encontrada con id: " + idZona));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Zona no encontrada"));
         return repositorioEspacio.findByZonaAndEstado(objZona.getId(), estado).stream()
                 .map(mapper::toResponseDto)
                 .collect(Collectors.toList());
