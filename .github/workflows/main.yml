@@ -80,6 +80,7 @@ jobs:
       - name: Ejecutar pruebas unitarias y generar reporte de cobertura
         run: |
           cd backend
+          chmod +x ./mvnw
           ./mvnw clean test
         env:
           # Variables de entorno mínimas para que Spring arranque en modo test
@@ -144,6 +145,7 @@ jobs:
       - name: Compilar el backend (sin tests)
         run: |
           cd backend
+          chmod +x ./mvnw
           ./mvnw package -DskipTests
 
       - name: Arrancar backend Spring Boot en segundo plano
@@ -270,6 +272,7 @@ jobs:
       - name: Compilar y empaquetar el backend
         run: |
           cd backend
+          chmod +x ./mvnw
           ./mvnw package -DskipTests
 
       - name: Disparar re-deploy en Render (Deploy Hook)
