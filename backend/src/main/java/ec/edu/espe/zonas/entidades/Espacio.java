@@ -33,9 +33,9 @@ public class Espacio{
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(unique=true, nullable=false, length=12)//EJEMPLO ESPACIO-1A-ZONA-A1
+    @Column(unique=true, nullable=false, length=50)
     private String codigo;
-    @Column(length = 12)
+    @Column(length = 100)
     private String descripcion;
 
     @Enumerated(EnumType.STRING)
