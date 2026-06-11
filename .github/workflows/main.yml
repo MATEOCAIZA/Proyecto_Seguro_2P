@@ -287,7 +287,7 @@ jobs:
           # Cambia 'mi-backend' por el nombre que desees para tu imagen
           tags: ${{ secrets.DOCKER_USERNAME }}/mi-backend:latest 
 
-      - #name: Disparar re-deploy en Render (Deploy Hook)
+      #- #name: Disparar re-deploy en Render (Deploy Hook)
         #run: |
         #  curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
 
