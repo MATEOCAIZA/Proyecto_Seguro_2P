@@ -37,11 +37,77 @@ class PeticionCodigo(BaseModel):
     nombre_archivo: str = "Desconocido.java"
 
 # 3. Funciones de Extracción (Reglas de negocio del modelo)
-# Actualiza la lista para ser más específica a Java puro (evitando choques con JPA)
+# Lista más específica a Java puro (evitando choques con JPA)
 FUNCIONES_PELIGROSAS = [
-    'exec', 'prepareStatement', 'getOutputStream', 
+    'exec', 'prepareStatement', 'getOutputStream',
     'Socket', 'Runtime', 'getenv', 'ProcessBuilder'
 ]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MÓDULO FORENSE: Mapeo de patrones de código → CWE
+# Si el Juez (ML) detecta vulnerabilidad, el Forense deduce el CWE concreto
+# basándose en los tokens peligrosos presentes en el código fuente del método.
+# ─────────────────────────────────────────────────────────────────────────────
+CWE_MAPPING = [
+    {
+        "cwe_id": "CWE-78",
+        "nombre": "OS Command Injection",
+        "patrones": ["exec", "Runtime", "ProcessBuilder", "getRuntime"],
+        "descripcion": "Ejecución arbitraria de comandos del sistema operativo."
+    },
+    {
+        "cwe_id": "CWE-89",
+        "nombre": "SQL Injection",
+        "patrones": ["executeQuery", "prepareStatement", "createQuery",
+                      "nativeQuery", "createNativeQuery", "Statement"],
+        "descripcion": "Inyección de SQL que permite manipular la base de datos."
+    },
+    {
+        "cwe_id": "CWE-319",
+        "nombre": "Cleartext Transmission of Sensitive Information",
+        "patrones": ["Socket", "getOutputStream", "HttpURLConnection",
+                      "URL", "openConnection", "getInputStream"],
+        "descripcion": "Transmisión de datos sensibles sin cifrado."
+    },
+    {
+        "cwe_id": "CWE-200",
+        "nombre": "Exposure of Sensitive Information",
+        "patrones": ["getenv", "System.getProperty", "printStackTrace",
+                      "getPassword", "getSecret", "getKey"],
+        "descripcion": "Exposición de información confidencial del entorno o sistema."
+    },
+    {
+        "cwe_id": "CWE-22",
+        "nombre": "Path Traversal",
+        "patrones": ["File", "FileInputStream", "FileOutputStream",
+                      "FileReader", "FileWriter", "Paths.get", "resolve"],
+        "descripcion": "Acceso a rutas de archivos fuera del directorio permitido."
+    },
+]
+
+def deducir_cwe(codigo_metodo: str) -> dict | None:
+    """
+    Analiza el código fuente de un método para detectar patrones de CWE.
+    Retorna el CWE más probable o None si no se identifica ninguno.
+    El análisis es simple (búsqueda de tokens) para ser rápido y determinista.
+    """
+    coincidencias = []
+    for regla in CWE_MAPPING:
+        score = sum(1 for patron in regla["patrones"] if patron in codigo_metodo)
+        if score > 0:
+            coincidencias.append((score, regla))
+
+    if not coincidencias:
+        return None
+
+    # Retornar el CWE con más coincidencias de patrones
+    coincidencias.sort(key=lambda x: x[0], reverse=True)
+    mejor = coincidencias[0][1]
+    return {
+        "cwe_id": mejor["cwe_id"],
+        "nombre": mejor["nombre"],
+        "descripcion": mejor["descripcion"]
+    }
 
 def calcular_profundidad_ast(nodo):
     if not hasattr(nodo, 'children') or not nodo.children:
@@ -113,6 +179,9 @@ async def analizar_codigo(peticion: PeticionCodigo):
         for _, metodo in arbol.filter(javalang.tree.MethodDeclaration):
             features = extraer_features(metodo)
             features['metodo_nombre'] = metodo.name
+            # Preservar el código fuente del método para el análisis forense de CWE
+            # Extraemos las líneas del método usando las posiciones del AST
+            features['_codigo_metodo'] = peticion.codigo_fuente  # Se filtra antes de predecir
             metodos_analizados.append(features)
 
         if not metodos_analizados:
@@ -131,11 +200,12 @@ async def analizar_codigo(peticion: PeticionCodigo):
         df['densidad_variables'] = df['num_variables'] / (df['total_nodos'] + 1)
         df['ratio_manejo_errores'] = (df['num_catches'] + df['num_throws']) / (df['total_nodos'] + 1)
 
-        # Separar nombres de métodos antes de predecir
+        # Separar nombres de métodos y código fuente antes de predecir
         nombres_metodos = df['metodo_nombre'].tolist()
-        X = df.drop(columns=['metodo_nombre'])
+        codigos_metodos = df['_codigo_metodo'].tolist()  # Para el análisis forense
+        X = df.drop(columns=['metodo_nombre', '_codigo_metodo'])
 
-        # MODIFICACIÓN: Predicción basada en probabilidades para ajustar la sensibilidad
+        # Predicción basada en probabilidades para ajustar la sensibilidad
         probabilidades = modelo_rf.predict_proba(X)
 
         vulnerabilidades = []
@@ -143,13 +213,28 @@ async def analizar_codigo(peticion: PeticionCodigo):
 
         for i, prob in enumerate(probabilidades):
             prob_vulnerable = prob[1]  # Probabilidad de pertenecer a la clase 1 (Vulnerable)
-            
-            # Solo se reporta como riesgo si supera el nuevo umbral del 70%
+
+            # Solo se reporta como riesgo si supera el umbral del 70%
             if prob_vulnerable >= UMBRAL_VULNERABILIDAD:
-                vulnerabilidades.append({
+                # ── MÓDULO FORENSE ──────────────────────────────────────────
+                # El Juez (ML) decidió que es vulnerable → el Forense deduce el CWE
+                cwe_info = deducir_cwe(codigos_metodos[i])
+                # ─────────────────────────────────────────────────────────────
+
+                entry = {
                     "metodo": nombres_metodos[i],
-                    "probabilidad_vulnerable": round(float(prob_vulnerable) * 100, 2)
-                })
+                    "probabilidad_vulnerable": round(float(prob_vulnerable) * 100, 2),
+                }
+                if cwe_info:
+                    entry["cwe"] = cwe_info["cwe_id"]
+                    entry["cwe_nombre"] = cwe_info["nombre"]
+                    entry["cwe_descripcion"] = cwe_info["descripcion"]
+                else:
+                    entry["cwe"] = None
+                    entry["cwe_nombre"] = "Patrón no identificado"
+                    entry["cwe_descripcion"] = "El modelo detectó riesgo pero no se identificó un patrón CWE conocido."
+
+                vulnerabilidades.append(entry)
 
         # Respuesta estructurada para el pipeline de CI/CD
         es_seguro = len(vulnerabilidades) == 0

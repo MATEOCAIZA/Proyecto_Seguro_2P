@@ -178,7 +178,8 @@ def main():
         else:
             print(f"   ❌ VULNERABLE — {len(vulns)} método(s) con riesgo detectado:")
             for v in vulns:
-                print(f"      • Método '{v['metodo']}' — Probabilidad: {v['probabilidad_vulnerable']}%")
+                cwe_str = f"{v.get('cwe', 'N/A')} {v.get('cwe_nombre', '')}" if v.get('cwe') else "CWE no identificado"
+                print(f"      • Método '{v['metodo']}' — Confianza: {v['probabilidad_vulnerable']}% — {cwe_str}")
             vulnerabilidades_totales.extend(vulns)
             archivos_vulnerables.append(nombre)
 
@@ -192,13 +193,25 @@ def main():
     # 5.4 Resultado final
     if archivos_vulnerables:
         # Construir comentario detallado para GitHub
-        detalle_vulns = "### 🚨 Análisis de Seguridad: Código Vulnerable Detectado\n\nEl modelo de minería de datos ha clasificado este código como riesgoso. Detalles:\n"
+        detalle_vulns = "### 🚨 Análisis de Seguridad: Código Vulnerable Detectado\n\n"
+        detalle_vulns += "El modelo de minería de datos ha clasificado este código como riesgoso.\n\n"
+        detalle_vulns += "| Método | Confianza ML | CWE | Vulnerabilidad | Descripción |\n"
+        detalle_vulns += "|--------|-------------|-----|----------------|-------------|\n"
         for v in vulnerabilidades_totales:
-            detalle_vulns += f"- **Método/Función:** `{v['metodo']}` | **Probabilidad:** {v['probabilidad_vulnerable']}%\n"
-        
+            cwe_id   = v.get('cwe') or 'N/A'
+            cwe_nom  = v.get('cwe_nombre', 'Patrón no identificado')
+            cwe_desc = v.get('cwe_descripcion', '')
+            detalle_vulns += (
+                f"| `{v['metodo']}` "
+                f"| **{v['probabilidad_vulnerable']}%** "
+                f"| `{cwe_id}` "
+                f"| {cwe_nom} "
+                f"| {cwe_desc} |\n"
+            )
+
         # 1. Crear comentario en el PR
         pr.create_issue_comment(detalle_vulns)
-        
+
         # 2. Aplicar etiqueta al PR
         try:
             pr.add_to_labels("fixing-required")
@@ -207,32 +220,64 @@ def main():
 
         # 3. Crear un Issue automático vinculado
         titulo_issue = f"Corregir vulnerabilidades introducidas en PR #{PR_NUMBER}"
-        cuerpo_issue = f"Se ha bloqueado el PR #{PR_NUMBER} debido a código vulnerable.\n\n{detalle_vulns}\n\nPor favor, revisa y corrige el código antes de intentar un nuevo merge."
+        cuerpo_issue = (
+            f"Se ha bloqueado el PR #{PR_NUMBER} debido a código vulnerable.\n\n"
+            f"{detalle_vulns}\n\n"
+            f"Por favor, revisa y corrige el código antes de intentar un nuevo merge."
+        )
         repo.create_issue(title=titulo_issue, body=cuerpo_issue)
 
-        # 4. Notificar a Telegram
-        resumen_archivos = "\n".join([f"  - {a}" for a in archivos_vulnerables])
+        # 4. Notificar a Telegram — mensaje enriquecido equivalente al comentario de GitHub
+        resumen_archivos = "\n".join([f"  📄 {a}" for a in archivos_vulnerables])
+        separador = "─" * 40
+        lineas_vulns = []
+        for idx, v in enumerate(vulnerabilidades_totales, start=1):
+            cwe_id   = v.get('cwe') or 'N/A'
+            cwe_nom  = v.get('cwe_nombre', 'Patrón no identificado')
+            cwe_desc = v.get('cwe_descripcion', 'Sin descripción disponible.')
+            lineas_vulns.append(
+                f"{idx}. Método: {v['metodo']}\n"
+                f"   🎯 Confianza ML : {v['probabilidad_vulnerable']}%\n"
+                f"   🏷️  CWE          : {cwe_id} — {cwe_nom}\n"
+                f"   📋 Descripción  : {cwe_desc}"
+            )
+        detalle_telegram = f"\n{separador}\n".join(lineas_vulns)
         mensaje_fallo = (
-            f"🚨 PR #{PR_NUMBER} RECHAZADO — Código vulnerable\n"
-            f"Archivos afectados:\n{resumen_archivos}\n"
-            f"Repositorio: {REPO_NAME}"
+            f"🚨 ALERTA DE SEGURIDAD — PR RECHAZADO\n"
+            f"{separador}\n"
+            f"📌 Repositorio : {REPO_NAME}\n"
+            f"🔀 Pull Request: #{PR_NUMBER}\n"
+            f"📁 Archivos afectados:\n{resumen_archivos}\n"
+            f"{separador}\n"
+            f"⚠️  Vulnerabilidades detectadas ({len(vulnerabilidades_totales)} total):\n\n"
+            f"{detalle_telegram}\n"
+            f"{separador}\n"
+            f"🔒 Acción requerida: Corregir el código antes de hacer un nuevo merge.\n"
+            f"🔗 Ver issue en: https://github.com/{REPO_NAME}/issues"
         )
         print(f"❌ ANÁLISIS FALLIDO — PR BLOQUEADO")
         enviar_telegram(mensaje_fallo)
-        
+
         # Falla el workflow -> GitHub bloquea el merge
-        sys.exit(1) 
+        sys.exit(1)
     else:
+        archivos_revisados = "\n".join([f"  ✅ {nombre}" for nombre, _ in archivos])
         mensaje_ok = (
-            f"✅ PR #{PR_NUMBER} APROBADO — Análisis seguro.\n"
-            f"Repositorio: {REPO_NAME}\n"
-            f"Archivos revisados: {len(archivos)}"
+            f"✅ ANÁLISIS DE SEGURIDAD EXITOSO\n"
+            f"{'─' * 40}\n"
+            f"📌 Repositorio : {REPO_NAME}\n"
+            f"🔀 Pull Request: #{PR_NUMBER}\n"
+            f"{'─' * 40}\n"
+            f"🔍 Archivos revisados ({len(archivos)}):\n{archivos_revisados}\n"
+            f"{'─' * 40}\n"
+            f"🚀 El código no presenta vulnerabilidades.\n"
+            f"   El pipeline continúa con las pruebas automáticas."
         )
         print(f"✅ ANÁLISIS EXITOSO — Todo el código es seguro.")
         enviar_telegram(mensaje_ok)
-        
+
         # El workflow continúa -> se ejecutan los tests
-        sys.exit(0) 
+        sys.exit(0)
 
 if __name__ == "__main__":
     main()
