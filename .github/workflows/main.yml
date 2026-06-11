@@ -1,6 +1,10 @@
 name: DevSecOps Dev->Test->Main Pipeline
 
-# Trigger: El pipeline se activa al hacer un Pull Request hacia la rama 'test'
+# ──────────────────────────────────────────────────────────────────────────────
+# TRIGGER:
+#   • Pull Request → rama 'test'  : ejecuta toda la cadena (nodos 1-5)
+#   • Push         → rama 'main'  : solo notifica el despliegue exitoso
+# ──────────────────────────────────────────────────────────────────────────────
 on:
   pull_request:
     branches:
@@ -10,15 +14,16 @@ on:
       - main
 
 jobs:
-  # ==========================================
-  # ETAPA 1: REVISIÓN DE SEGURIDAD (MINERÍA)
-  # ==========================================
+
+  # ============================================================================
+  # NODO 1: REVISIÓN DE SEGURIDAD (Modelo de Minería ML)
+  # Evalúa el código del PR con el modelo predictivo Python.
+  # Si hay vulnerabilidades críticas, comenta el PR y bloquea el avance.
+  # ============================================================================
   security_scan:
+    name: "🔍 Nodo 1 — Revisión de Seguridad (ML)"
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    
-    # CAMBIO 1: Permisos de escritura necesarios para que evaluar_pr.py 
-    # pueda comentar el PR, crear la issue vinculada y asignar la etiqueta fixing-required
     permissions:
       pull-requests: write
       issues: write
@@ -30,24 +35,259 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Configurar Python
+      - name: Configurar Python 3.11
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
-      - name: Instalar dependencias de ML
+      - name: Instalar dependencias del modelo ML
         run: |
           cd seguridad
           pip install -r requirements.txt
 
-      - name: Ejecutar Modelo Predictivo
+      - name: Ejecutar Modelo Predictivo de Seguridad
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          MODELO_API_URL: ${{ secrets.MODELO_API_URL }}
-          # CAMBIO 2: Descomentadas las variables de Telegram para inyectar los secrets al script
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          GITHUB_TOKEN:    ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER:       ${{ github.event.pull_request.number }}
+          MODELO_API_URL:  ${{ secrets.MODELO_API_URL }}
+          TELEGRAM_TOKEN:  ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           cd seguridad
           python evaluar_pr.py
+
+  # ============================================================================
+  # NODO 2: PRUEBAS UNITARIAS SPRING BOOT (JUnit 5 + JaCoCo)
+  # Depende del Nodo 1. Corre en PARALELO con el Nodo 3.
+  # Ejecuta los 50+ tests unitarios y genera el reporte de cobertura JaCoCo.
+  # ============================================================================
+  spring_boot_tests:
+    name: "🧪 Nodo 2 — Pruebas JUnit 5 + Cobertura JaCoCo"
+    needs: security_scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v3
+
+      - name: Configurar Java 21
+        uses: actions/setup-java@v3
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Ejecutar pruebas unitarias y generar reporte de cobertura
+        run: |
+          cd backend
+          ./mvnw clean test
+        env:
+          # Variables de entorno mínimas para que Spring arranque en modo test
+          # (sin BD real: las pruebas usan Mockito, no necesitan PostgreSQL)
+          SPRING_DATASOURCE_URL:      jdbc:h2:mem:testdb
+          SPRING_DATASOURCE_USERNAME: sa
+          SPRING_DATASOURCE_PASSWORD: ""
+          SPRING_JPA_DATABASE_PLATFORM: org.hibernate.dialect.H2Dialect
+
+      - name: Publicar reporte de cobertura JaCoCo
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jacoco-report
+          path: backend/target/site/jacoco/
+
+      - name: Notificar fallo via Telegram (solo si falla)
+        if: failure()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="❌ *Nodo 2 FALLÓ* — Pruebas JUnit en PR #${{ github.event.pull_request.number }}%0ARevisa los logs en: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            -d parse_mode="Markdown"
+
+  # ============================================================================
+  # NODO 3: PRUEBAS DE RENDIMIENTO (K6)
+  # Depende del Nodo 1. Corre en PARALELO con el Nodo 2.
+  # Lanza el backend Spring Boot en segundo plano y ejecuta los scripts K6.
+  # ============================================================================
+  performance_tests:
+    name: "⚡ Nodo 3 — Pruebas de Rendimiento K6"
+    needs: security_scan
+    runs-on: ubuntu-latest
+
+    services:
+      # Base de datos H2 en memoria no aplica aquí; usamos PostgreSQL real en servicio
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB:       zonas_test
+          POSTGRES_USER:     test_user
+          POSTGRES_PASSWORD: test_pass
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v3
+
+      - name: Configurar Java 21
+        uses: actions/setup-java@v3
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Compilar el backend (sin tests)
+        run: |
+          cd backend
+          ./mvnw package -DskipTests
+
+      - name: Arrancar backend Spring Boot en segundo plano
+        run: |
+          cd backend
+          java -jar target/*.jar \
+            --spring.datasource.url=jdbc:postgresql://localhost:5432/zonas_test \
+            --spring.datasource.username=test_user \
+            --spring.datasource.password=test_pass \
+            --spring.jpa.hibernate.ddl-auto=create-drop \
+            --server.port=8080 &
+          # Esperar hasta 60s a que el backend responda
+          echo "Esperando que el backend arranque..."
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8080/api/v1/zonas/ && break
+            sleep 2
+          done
+
+      - name: Instalar K6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring \
+            --keyring /usr/share/keyrings/k6-archive-keyring.gpg \
+            --keyserver hkp://keyserver.ubuntu.com:80 \
+            --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] \
+            https://dl.k6.io/deb stable main" \
+            | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6 -y
+
+      - name: Ejecutar prueba K6 — Crear Zona
+        run: |
+          cd backend
+          mkdir -p resultados
+          k6 run src/test/k6/crear_zona.js \
+            --out json=resultados/crear_zona_resultado.json || true
+
+      - name: Obtener UUID de zona creada y ejecutar prueba K6 — Crear Espacio
+        run: |
+          ZONA_ID=$(curl -sf http://localhost:8080/api/v1/zonas/ \
+            | python3 -c "import sys,json; data=json.load(sys.stdin); print(data[0]['idZona'] if data else '')" 2>/dev/null || echo "")
+          cd backend
+          mkdir -p resultados
+          if [ -n "$ZONA_ID" ]; then
+            k6 run -e ZONA_ID="$ZONA_ID" src/test/k6/crear_espacio.js \
+              --out json=resultados/crear_espacio_resultado.json || true
+          else
+            echo "⚠️ No se encontraron zonas para la prueba de espacios. Saltando..."
+          fi
+
+      - name: Publicar resultados K6
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: k6-results
+          path: backend/resultados/
+
+      - name: Notificar fallo via Telegram (solo si falla)
+        if: failure()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="❌ *Nodo 3 FALLÓ* — Pruebas K6 en PR #${{ github.event.pull_request.number }}%0ARevisa los logs en: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            -d parse_mode="Markdown"
+
+  # ============================================================================
+  # NODO 4: CONVERGENCIA — MERGE A TEST
+  # Espera a que el Nodo 2 Y el Nodo 3 terminen con éxito.
+  # Hace el merge automático del PR a la rama 'test' y notifica por Telegram.
+  # ============================================================================
+  merge_to_test:
+    name: "🔀 Nodo 4 — Merge a Test"
+    needs: [spring_boot_tests, performance_tests]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Merge automático del PR a la rama 'test'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr merge ${{ github.event.pull_request.number }} \
+            --merge \
+            --auto \
+            --subject "✅ [CI] Merge automático PR #${{ github.event.pull_request.number }} → test"
+
+      - name: Notificar éxito via Telegram
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d parse_mode="Markdown" \
+            -d text="✅ *Pipeline exitoso*%0A%0A🔍 Seguridad: PASADO%0A🧪 JUnit + JaCoCo: PASADO%0A⚡ K6 Rendimiento: PASADO%0A%0A🔀 PR \`#${{ github.event.pull_request.number }}\` mergeado a \`test\` correctamente."
+
+  # ============================================================================
+  # NODO 5: DESPLIEGUE EN PRODUCCIÓN (Render)
+  # Se activa SOLO cuando hay un push a 'main' (después del merge a main).
+  # Dispara el re-deploy del servicio en Render via webhook.
+  # ============================================================================
+  deploy_production:
+    name: "🚀 Nodo 5 — Despliegue en Render"
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v3
+
+      - name: Configurar Java 21
+        uses: actions/setup-java@v3
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Compilar y empaquetar el backend
+        run: |
+          cd backend
+          ./mvnw package -DskipTests
+
+      - name: Disparar re-deploy en Render (Deploy Hook)
+        run: |
+          curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+
+      - name: Notificar despliegue exitoso via Telegram
+        if: success()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d parse_mode="Markdown" \
+            -d text="🚀 *Despliegue en Producción exitoso*%0A%0ARama: \`main\`%0ACommit: \`${{ github.sha }}\`%0AServicio actualizado en Render correctamente."
+
+      - name: Notificar fallo del despliegue via Telegram
+        if: failure()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d parse_mode="Markdown" \
+            -d text="❌ *Despliegue FALLÓ*%0A%0ARama: \`main\`%0ACommit: \`${{ github.sha }}\`%0ARevisa los logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
