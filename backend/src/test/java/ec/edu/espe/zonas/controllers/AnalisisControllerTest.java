@@ -61,13 +61,12 @@ class AnalisisControllerTest {
 
     private AnalisisRequestDto requestValido;
 
-    private static final String CODIGO_JAVA_SIMPLE = """
-            public class Ejemplo {
-                public void saludar() {
-                    System.out.println("Hola mundo");
-                }
-            }
-            """;
+    private static final String CODIGO_JAVA_SIMPLE =
+            "public class Ejemplo {\n" +
+            "    public void saludar() {\n" +
+            "        System.out.println(\"Hola mundo\");\n" +
+            "    }\n" +
+            "}";
 
     @BeforeEach
     void setUp() {
