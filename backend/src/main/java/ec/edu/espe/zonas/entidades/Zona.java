@@ -40,7 +40,7 @@ public class Zona {
     @Column
     private String descripcion;
     
-    @Column(unique = true, nullable = false, length = 12)
+    @Column(unique = true, nullable = false, length = 30)
     private String codigo;
     
     @Column 
