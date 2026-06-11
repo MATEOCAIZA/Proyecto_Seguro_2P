@@ -21,7 +21,7 @@ jobs:
   # Si hay vulnerabilidades críticas, comenta el PR y bloquea el avance.
   # ============================================================================
   security_scan:
-    name: "🔍 Nodo 1 — Revisión de Seguridad (ML)"
+    name: "Revisión de Seguridad (ML)"
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
@@ -62,7 +62,7 @@ jobs:
   # Ejecuta los 50+ tests unitarios y genera el reporte de cobertura JaCoCo.
   # ============================================================================
   spring_boot_tests:
-    name: "🧪 Nodo 2 — Pruebas JUnit 5 + Cobertura JaCoCo"
+    name: "Pruebas JUnit 5 + Cobertura JaCoCo"
     needs: security_scan
     runs-on: ubuntu-latest
 
@@ -111,7 +111,7 @@ jobs:
   # Lanza el backend Spring Boot en segundo plano y ejecuta los scripts K6.
   # ============================================================================
   performance_tests:
-    name: "⚡ Nodo 3 — Pruebas de Rendimiento K6"
+    name: "Pruebas de Rendimiento K6"
     needs: security_scan
     runs-on: ubuntu-latest
 
@@ -218,7 +218,7 @@ jobs:
   # Hace el merge automático del PR a la rama 'test' y notifica por Telegram.
   # ============================================================================
   merge_to_test:
-    name: "🔀 Nodo 4 — Merge a Test"
+    name: "Merge a Test"
     needs: [spring_boot_tests, performance_tests]
     runs-on: ubuntu-latest
     permissions:
@@ -254,7 +254,7 @@ jobs:
   # Dispara el re-deploy del servicio en Render via webhook.
   # ============================================================================
   deploy_production:
-    name: "🚀 Nodo 5 — Despliegue en Render"
+    name: "Despliegue en Render"
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
