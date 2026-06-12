@@ -299,21 +299,22 @@ jobs:
           # Cambia 'mi-backend' por el nombre que desees para tu imagen
           tags: ${{ secrets.DOCKER_USERNAME }}/mi-backend:latest 
 
-      #- #name: Disparar re-deploy en Render (Deploy Hook)
-        #run: |
-        #  curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+      - name: Disparar re-deploy en Render (Deploy Hook)
+        run: |
+          curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
 
-#      - name: Notificar despliegue exitoso via Telegram
- #       if: success()
-  #      run: |
-   #        -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-    #        -d parse_mode="Markdown" \
-     #       -d text="🚀 *Despliegue en Producción exitoso*%0A%0ARama: \`main\`%0ACommit: \`${{ github.sha }}\`%0AServicio actualizado en Render correctamente."
+      - name: Notificar despliegue exitoso via Telegram
+        if: success()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d parse_mode="Markdown" \
+            -d text="🚀 *Despliegue en Producción exitoso*%0A%0ARama: \`main\`%0ACommit: \`${{ github.sha }}\`%0AServicio actualizado en Render correctamente."
 
-      #- name: Notificar fallo del despliegue via Telegram
-       # if: failure()
-        #run: |
-        #  curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
-         #   -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-          #  -d parse_mode="Markdown" \
-           # -d text="❌ *Despliegue FALLÓ*%0A%0ARama: \`main\`%0ACommit: \`${{ github.sha }}\`%0ARevisa los logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+      - name: Notificar fallo del despliegue via Telegram
+        if: failure()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d parse_mode="Markdown" \
+            -d text="❌ *Despliegue FALLÓ*%0A%0ARama: \`main\`%0ACommit: \`${{ github.sha }}\`%0ARevisa los logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
