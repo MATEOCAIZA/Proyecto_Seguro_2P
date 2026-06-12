@@ -22,7 +22,10 @@ class UtilsMappersTest {
     @Test
     @DisplayName("toResponseDto — Debe retornar null si el objeto es nulo")
     void toResponseDto_nulo_debeRetornarNull() {
-        assertNull(mapper.toResponseDto(null));
+        // Verificar que el mapper maneje entradas nulas de forma segura
+        Espacio entradaNula = null;
+        EspacioResponseDto resultado = mapper.toResponseDto(entradaNula);
+        assertNull(resultado, "El mapper debe retornar null cuando la entidad de entrada es null");
     }
 
     @Test
@@ -63,7 +66,10 @@ class UtilsMappersTest {
     @Test
     @DisplayName("toEntityEspacio — Debe retornar null si el request es nulo")
     void toEntityEspacio_nulo_debeRetornarNull() {
-        assertNull(mapper.toEntityEspacio(null));
+        // Verificar que el mapper maneje entradas nulas de forma segura
+        EspacioRequestDto requestNulo = null;
+        Espacio resultado = mapper.toEntityEspacio(requestNulo);
+        assertNull(resultado, "El mapper debe retornar null cuando el request de entrada es null");
     }
 
     @Test
