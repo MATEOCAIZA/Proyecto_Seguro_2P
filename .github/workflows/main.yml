@@ -294,27 +294,66 @@ jobs:
       - name: Construir y subir imagen Docker
         uses: docker/build-push-action@v4
         with:
-          context: ./backend # Apunta a la carpeta donde está tu Dockerfile
+          context: ./backend
           push: true
-          # Cambia 'mi-backend' por el nombre que desees para tu imagen
           tags: ${{ secrets.DOCKER_USERNAME }}/mi-backend:latest 
 
+      # --- NUEVO MENSAJE: DOCKERIZACIÓN EXITOSA ---
+      - name: Notificar Docker Push via Telegram
+        if: success()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d parse_mode="Markdown" \
+            -d text="🐳 *Paso 1/2: Imagen Docker Lista*%0A%0ASe ha construido y subido la imagen de Spring Boot a Docker Hub correctamente.%0A%0A⏳ Iniciando el despliegue automático en Render..."
+
+      # --- INICIO DEL DESPLIEGUE EN RENDER ---
       - name: Disparar re-deploy en Render (Deploy Hook)
         run: |
           curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
 
+      - name: Esperar a que el contenedor de Spring Boot levante
+        run: |
+          echo "Iniciando despliegue en Render. Esperando a que el servidor responda..."
+          
+          # REEMPLAZA ESTO CON LA URL PÚBLICA DE TU SERVICIO EN RENDER:
+          URL="https://tu-backend-espe.onrender.com" 
+          
+          sleep 40 
+          
+          TIMEOUT=300
+          ELAPSED=0
+          
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            STATUS=$(curl -o /dev/null -s -w "%{http_code}\n" $URL)
+            
+            if [ "$STATUS" -eq 200 ] || [ "$STATUS" -eq 401 ] || [ "$STATUS" -eq 403 ] || [ "$STATUS" -eq 404 ]; then
+              echo "✅ ¡La aplicación está arriba y respondiendo en Producción! (HTTP $STATUS)"
+              exit 0
+            fi
+            
+            echo "Aún arrancando... (HTTP $STATUS). Reintentando en 15 segundos."
+            sleep 15
+            ELAPSED=$((ELAPSED + 15))
+          done
+          
+          echo "❌ Tiempo de espera agotado. El contenedor no logró arrancar a tiempo."
+          exit 1
+
+      # --- MENSAJE FINAL: DESPLIEGUE EXITOSO ---
       - name: Notificar despliegue exitoso via Telegram
         if: success()
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
             -d parse_mode="Markdown" \
-            -d text="🚀 *Despliegue en Producción exitoso*%0A%0ARama: \`main\`%0ACommit: \`${{ github.sha }}\`%0AServicio actualizado en Render correctamente."
+            -d text="🚀 *Paso 2/2: Despliegue Exitoso*%0A%0AEl contenedor ya está online y respondiendo peticiones.%0ARama: \`main\`%0ACommit: \`${{ github.sha }}\`"
 
+      # --- MENSAJE DE FALLO GLOBAL ---
       - name: Notificar fallo del despliegue via Telegram
         if: failure()
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
             -d parse_mode="Markdown" \
-            -d text="❌ *Despliegue FALLÓ*%0A%0ARama: \`main\`%0ACommit: \`${{ github.sha }}\`%0ARevisa los logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            -d text="❌ *ERROR EN EL PIPELINE DE PRODUCCIÓN*%0A%0AAlgo falló durante la creación de Docker o el arranque en Render.%0ARama: \`main\`%0ARevisa los logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
