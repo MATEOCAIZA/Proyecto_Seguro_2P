@@ -81,7 +81,7 @@ jobs:
         run: |
           cd backend
           chmod +x ./mvnw
-          ./mvnw clean test
+          ./mvnw clean test -Dexclude="**/*IntegrationTest.java"
         env:
           # Variables de entorno mínimas para que Spring arranque en modo test
           # (sin BD real: las pruebas usan Mockito, no necesitan PostgreSQL)

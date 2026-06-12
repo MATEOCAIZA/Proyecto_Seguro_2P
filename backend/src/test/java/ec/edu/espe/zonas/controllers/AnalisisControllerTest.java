@@ -108,6 +108,7 @@ class AnalisisControllerTest {
 
         // Act & Assert
         mockMvc.perform(post("/api/v1/analisis/codigo")
+                        .header("X-Forwarded-Proto", "https")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(requestValido)))
                 .andExpect(status().isOk())
@@ -147,6 +148,7 @@ class AnalisisControllerTest {
 
         // Act & Assert
         mockMvc.perform(post("/api/v1/analisis/codigo")
+                        .header("X-Forwarded-Proto", "https")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(requestVulnerable)))
                 .andExpect(status().isOk())
@@ -187,6 +189,7 @@ class AnalisisControllerTest {
 
         // Act & Assert
         mockMvc.perform(post("/api/v1/analisis/codigo")
+                        .header("X-Forwarded-Proto", "https")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(requestValido)))
                 .andExpect(status().isServiceUnavailable());
@@ -203,6 +206,7 @@ class AnalisisControllerTest {
 
         // Act & Assert
         mockMvc.perform(post("/api/v1/analisis/codigo")
+                        .header("X-Forwarded-Proto", "https")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(requestValido)))
                 .andExpect(status().isBadGateway());
@@ -262,6 +266,7 @@ class AnalisisControllerTest {
 
         // Act & Assert
         mockMvc.perform(post("/api/v1/analisis/codigo/async")
+                        .header("X-Forwarded-Proto", "https")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(requestValido)))
                 .andExpect(status().isAccepted())
