@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import ec.edu.espe.zonas.dtos.AnalisisRequestDto;
 import ec.edu.espe.zonas.dtos.AnalisisResponseDto;
 import ec.edu.espe.zonas.dtos.VulnerabilidadDto;
+import ec.edu.espe.zonas.services.AnalisisMensajeriaServicio;
 import ec.edu.espe.zonas.services.AnalisisServicio;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -51,6 +52,9 @@ class AnalisisControllerTest {
 
     @Mock
     private AnalisisServicio analisisServicio;
+
+    @Mock
+    private AnalisisMensajeriaServicio analisisMensajeriaServicio;
 
     @InjectMocks
     private AnalisisController analisisController;
@@ -249,5 +253,22 @@ class AnalisisControllerTest {
                 .andExpect(jsonPath("$.microservicio_disponible", is(false)))
                 .andExpect(jsonPath("$.mensaje",
                         is("El microservicio de análisis no está disponible.")));
+    }
+
+    @Test
+    @DisplayName("POST /codigo/async → 202 Aceptado al encolar la solicitud de análisis")
+    void analizarCodigoAsync_debeRetornar202Aceptado() throws Exception {
+        // Arrange
+        doNothing().when(analisisMensajeriaServicio).enviarSolicitudAnalisis(any(AnalisisRequestDto.class));
+
+        // Act & Assert
+        mockMvc.perform(post("/api/v1/analisis/codigo/async")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(requestValido)))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.status", is("ENCOLADO")))
+                .andExpect(jsonPath("$.archivo", is("Ejemplo.java")));
+
+        verify(analisisMensajeriaServicio, times(1)).enviarSolicitudAnalisis(any(AnalisisRequestDto.class));
     }
 }
