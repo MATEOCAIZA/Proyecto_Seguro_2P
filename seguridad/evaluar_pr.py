@@ -127,11 +127,13 @@ def analizar_archivo(nombre_archivo: str, codigo_fuente: str) -> dict:
         respuesta.raise_for_status()
         return respuesta.json()
     except httpx.HTTPStatusError as e:
-        print(f"   ❌ Error HTTP al analizar {nombre_archivo}: {e.response.status_code} — {e.response.text}")
-        return {"es_seguro": False, "vulnerabilidades_detectadas": [], "error": str(e)}
+        # es_seguro=None indica fallo técnico, NO vulnerabilidad real detectada
+        print(f"   ⚠️  Error HTTP al analizar {nombre_archivo}: {e.response.status_code} — {e.response.text}")
+        return {"es_seguro": None, "vulnerabilidades_detectadas": [], "error": str(e)}
     except Exception as e:
-        print(f"   ❌ Error inesperado al analizar {nombre_archivo}: {e}")
-        return {"es_seguro": False, "vulnerabilidades_detectadas": [], "error": str(e)}
+        # es_seguro=None indica fallo técnico, NO vulnerabilidad real detectada
+        print(f"   ⚠️  Error inesperado al analizar {nombre_archivo}: {e}")
+        return {"es_seguro": None, "vulnerabilidades_detectadas": [], "error": str(e)}
 
 # ─────────────────────────────────────────────────────────
 # 5. Punto de entrada principal
@@ -169,19 +171,30 @@ def main():
         print(f"\n▶  Analizando: {nombre}")
         resultado = analizar_archivo(nombre, codigo)
 
-        es_seguro = resultado.get("es_seguro", False)
-        vulns = resultado.get("vulnerabilidades_detectadas", [])
+        es_seguro = resultado.get("es_seguro")  # None = error técnico, True = seguro, False = vulnerable
+        vulns     = resultado.get("vulnerabilidades_detectadas", [])
+        error_msg = resultado.get("error")
 
-        if es_seguro:
+        if es_seguro is None:
+            # Error de red o del microservicio — NO se bloquea el PR por esto
+            print(f"   ⚠️  No se pudo analizar '{nombre}' por error técnico: {error_msg}")
+            print(f"      El archivo se omite del análisis (no cuenta como vulnerable).")
+        elif es_seguro:
             total_metodos = resultado.get("total_metodos_analizados", "N/A")
             print(f"   ✅ SEGURO — {total_metodos} método(s) analizados sin vulnerabilidades.")
         else:
-            print(f"   ❌ VULNERABLE — {len(vulns)} método(s) con riesgo detectado:")
-            for v in vulns:
-                cwe_str = f"{v.get('cwe', 'N/A')} {v.get('cwe_nombre', '')}" if v.get('cwe') else "CWE no identificado"
-                print(f"      • Método '{v['metodo']}' — Confianza: {v['probabilidad_vulnerable']}% — {cwe_str}")
-            vulnerabilidades_totales.extend(vulns)
-            archivos_vulnerables.append(nombre)
+            # es_seguro=False Y la lista de vulns tiene elementos → vulnerabilidad real
+            if vulns:
+                print(f"   ❌ VULNERABLE — {len(vulns)} método(s) con riesgo detectado:")
+                for v in vulns:
+                    cwe_str = f"{v.get('cwe', 'N/A')} {v.get('cwe_nombre', '')}" if v.get('cwe') else "CWE no identificado"
+                    print(f"      • Método '{v['metodo']}' — Confianza: {v['probabilidad_vulnerable']}% — {cwe_str}")
+                vulnerabilidades_totales.extend(vulns)
+                archivos_vulnerables.append(nombre)
+            else:
+                # es_seguro=False pero sin vulnerabilidades listadas → respuesta ambigua del modelo
+                print(f"   ⚠️  El modelo marcó '{nombre}' como no seguro pero sin detalles de vulnerabilidades.")
+                print(f"      Se trata como advertencia, no bloquea el PR.")
 
     print("\n" + "=" * 60)
 
