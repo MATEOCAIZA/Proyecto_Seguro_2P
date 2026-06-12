@@ -38,9 +38,18 @@ import static org.mockito.Mockito.*;
  * - Los datos de prueba no contienen código real ni información sensible.
  */
 @SpringBootTest(properties = {
+    // Spring Boot 4.x movió las clases de auto-configuración de JPA/DataSource
+    // a nuevos paquetes. Se excluyen tanto los nombres de 3.x como los de 4.x
+    // para garantizar que el contexto arranque sin intentar inicializar
+    // una DataSource ni el EntityManager.
     "spring.autoconfigure.exclude=" +
     "org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration," +
-    "org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration"
+    "org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration," +
+    "org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration," +
+    "org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration",
+    // Limpiar el perfil 'test' (que configura H2) para evitar que el driver
+    // org.h2.Driver intente manejar la URL de PostgreSQL pasada por CI (Nodo 3).
+    "spring.profiles.active="
 })
 @Testcontainers
 class RabbitMQIntegrationTest {
