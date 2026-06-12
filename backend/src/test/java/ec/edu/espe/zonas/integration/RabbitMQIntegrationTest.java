@@ -38,13 +38,14 @@ import static org.mockito.Mockito.*;
  *   (integridad del payload, previene manipulación en la cola).
  * - Los datos de prueba no contienen código real ni información sensible.
  */
-@SpringBootTest(properties = {
+@SpringBootTest
+//(properties = {
     // Excluye la autoconfiguración de DataSource e JPA para que el contexto
     // arranque sin necesitar una base de datos real.
-    "spring.autoconfigure.exclude=" +
-    "org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration," +
-    "org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration"
-})
+//    "spring.autoconfigure.exclude=" +
+//    "org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration," +
+//    "org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration"
+//})
 @ActiveProfiles("integration")  // Carga application-integration.properties (sin H2 ni PostgreSQL)
 @Testcontainers
 class RabbitMQIntegrationTest {
