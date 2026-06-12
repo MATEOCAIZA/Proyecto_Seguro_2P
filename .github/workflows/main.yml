@@ -31,12 +31,12 @@ jobs:
 
     steps:
       - name: Descargar código del PR
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4 # ACTUALIZADO a v4
         with:
           fetch-depth: 0
 
       - name: Configurar Python 3.11
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5 # ACTUALIZADO a v5
         with:
           python-version: '3.11'
 
@@ -68,10 +68,10 @@ jobs:
 
     steps:
       - name: Descargar código
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4 # ACTUALIZADO a v4
 
       - name: Configurar Java 21
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4 # ACTUALIZADO a v4
         with:
           java-version: '21'
           distribution: 'temurin'
@@ -119,8 +119,8 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_DB:       zonas_test
-          POSTGRES_USER:     test_user
+          POSTGRES_DB:      zonas_test
+          POSTGRES_USER:    test_user
           POSTGRES_PASSWORD: test_pass
         ports:
           - 5432:5432
@@ -146,10 +146,10 @@ jobs:
 
     steps:
       - name: Descargar código
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4 # ACTUALIZADO a v4
 
       - name: Configurar Java 21
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4 # ACTUALIZADO a v4
         with:
           java-version: '21'
           distribution: 'temurin'
@@ -198,7 +198,7 @@ jobs:
 
     steps:
       - name: Descargar código
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4 # ACTUALIZADO a v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -235,7 +235,7 @@ jobs:
 
     steps:
       - name: Descargar código de la rama main
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4 # ACTUALIZADO a v4
         with:
           ref: main
           fetch-depth: 0
@@ -270,10 +270,10 @@ jobs:
 
     steps:
       - name: Descargar código
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4 # ACTUALIZADO a v4
 
       - name: Configurar Java 21
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4 # ACTUALIZADO a v4
         with:
           java-version: '21'
           distribution: 'temurin'
@@ -286,13 +286,13 @@ jobs:
           ./mvnw package -DskipTests
 
       - name: Iniciar sesión en Docker Hub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3 # ACTUALIZADO a v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Construir y subir imagen Docker
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v5 # ACTUALIZADO a v5
         with:
           context: ./backend
           push: true
@@ -317,7 +317,7 @@ jobs:
           echo "Iniciando despliegue en Render. Esperando a que el servidor responda..."
           
           # REEMPLAZA ESTO CON LA URL PÚBLICA DE TU SERVICIO EN RENDER:
-          URL="https://tu-backend-espe.onrender.com" 
+          URL="https://backend-seguro2p.onrender.com" 
           
           sleep 40 
           
