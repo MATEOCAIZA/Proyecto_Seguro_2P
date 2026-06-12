@@ -81,7 +81,7 @@ jobs:
         run: |
           cd backend
           chmod +x ./mvnw
-          ./mvnw clean test -Dexclude="**/*IntegrationTest.java"
+          ./mvnw clean test -Dexcludes="**/*IntegrationTest.java"
         env:
           # Variables de entorno mínimas para que Spring arranque en modo test
           # (sin BD real: las pruebas usan Mockito, no necesitan PostgreSQL)
@@ -161,11 +161,8 @@ jobs:
           chmod +x ./mvnw
           ./mvnw test -Dtest="*IntegrationTest" -DfailIfNoTests=false
         env:
-          SPRING_DATASOURCE_URL:      jdbc:postgresql://localhost:5432/zonas_test
-          SPRING_DATASOURCE_USERNAME: test_user
-          SPRING_DATASOURCE_PASSWORD: test_pass
-          SPRING_JPA_DATABASE_PLATFORM: org.hibernate.dialect.PostgreSQLDialect
-          SPRING_JPA_HIBERNATE_DDL_AUTO: create-drop
+          # No se pasan variables de DataSource: el test usa @ActiveProfiles("integration")
+          # + autoconfigure exclusions, por lo que Spring no intenta conectar a ninguna DB.
           SPRING_RABBITMQ_HOST:     localhost
           SPRING_RABBITMQ_PORT:     5672
           SPRING_RABBITMQ_USERNAME: guest
