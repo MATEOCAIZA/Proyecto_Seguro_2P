@@ -27,9 +27,9 @@ app.add_middleware(
 modelo_rf = None
 try:
     modelo_rf = joblib.load('modelo_mineria_seguro.pkl')
-    print("✅ Modelo cargado en memoria exitosamente.")
+    print("Modelo cargado en memoria exitosamente.")
 except Exception as e:
-    print(f"❌ Error al cargar el modelo: {e}")
+    print(f"Error al cargar el modelo: {e}")
 
 # 2. Definir el formato que Java nos va a enviar
 class PeticionCodigo(BaseModel):

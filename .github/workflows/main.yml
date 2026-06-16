@@ -2,18 +2,76 @@ name: DevSecOps Dev->Test->Main Pipeline
 
 # ──────────────────────────────────────────────────────────────────────────────
 # TRIGGER:
+#   • Push         → rama 'dev'   : crea un PR automático dev → test
 #   • Pull Request → rama 'test'  : ejecuta toda la cadena (nodos 1-5)
 #   • Push         → rama 'main'  : solo notifica el despliegue exitoso
 # ──────────────────────────────────────────────────────────────────────────────
 on:
+  push:
+    branches:
+      - dev
+      - main
   pull_request:
     branches:
       - test
-  push:
-    branches:
-      - main
 
 jobs:
+
+  # ============================================================================
+  # NODO 0: CREACIÓN AUTOMÁTICA DE PR (dev → test)
+  # Se ejecuta al hacer push a 'dev'. Crea un PR automático hacia 'test'.
+  # Si ya existe un PR abierto de dev → test, no crea uno duplicado.
+  # ============================================================================
+  create_pr:
+    name: "Crear PR automático (dev → test)"
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Crear Pull Request de dev → test
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Verificar si ya existe un PR abierto de dev → test
+          EXISTING_PR=$(gh pr list --base test --head dev --state open --json number --jq '.[0].number')
+
+          if [ -n "$EXISTING_PR" ]; then
+            echo "✅ Ya existe un PR abierto de dev → test: #$EXISTING_PR"
+            echo "   Se actualizará automáticamente con los nuevos cambios."
+          else
+            echo "📝 Creando nuevo PR de dev → test..."
+            gh pr create \
+              --base test \
+              --head dev \
+              --title "🔄 [CI] Merge automático dev → test" \
+              --body "### PR generado automáticamente por el pipeline CI/CD
+
+          **Rama origen:** \`dev\`
+          **Rama destino:** \`test\`
+          **Commit:** \`${{ github.sha }}\`
+          **Autor:** @${{ github.actor }}
+
+          ---
+          > Este PR fue creado automáticamente al hacer push a la rama \`dev\`.
+          > El pipeline de seguridad y pruebas se ejecutará a continuación."
+            echo "✅ PR creado exitosamente."
+          fi
+
+      - name: Notificar creación de PR via Telegram
+        if: success()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d parse_mode="Markdown" \
+            -d text="📋 *PR Automático creado*%0A%0ASe ha creado/actualizado un PR de \`dev\` → \`test\`.%0AEl pipeline de validación iniciará en breve.%0A%0ACommit: \`${{ github.sha }}\`%0AAutor: ${{ github.actor }}"
 
   # ============================================================================
   # NODO 1: REVISIÓN DE SEGURIDAD (Modelo de Minería ML)
