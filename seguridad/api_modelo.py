@@ -40,9 +40,13 @@ class PeticionCodigo(BaseModel):
 # Lista más específica a Java puro (evitando choques con JPA)
 FUNCIONES_PELIGROSAS = [
     'exec', 'prepareStatement', 'getOutputStream',
-    'Socket', 'Runtime', 'getenv', 'ProcessBuilder'
+    'Socket', 'Runtime', 'getenv', 'ProcessBuilder',
+    'ObjectInputStream', 'readObject', # Deserialización insegura
+    'DocumentBuilderFactory', 'SAXParserFactory', # XXE (XML External Entities)
+    'MessageDigest', 'Cipher', 'Random', # Criptografía débil
+    'ScriptEngine', 'eval', # Inyección de código / EL
+    'PrintWriter', 'getWriter' # Potencial XSS reflejado
 ]
-
 # ─────────────────────────────────────────────────────────────────────────────
 # MÓDULO FORENSE: Mapeo de patrones de código → CWE
 # Si el Juez (ML) detecta vulnerabilidad, el Forense deduce el CWE concreto
@@ -83,8 +87,44 @@ CWE_MAPPING = [
                       "FileReader", "FileWriter", "Paths.get", "resolve"],
         "descripcion": "Acceso a rutas de archivos fuera del directorio permitido."
     },
+    # --- NUEVOS CWE AGREGADOS ---
+    {
+        "cwe_id": "CWE-502",
+        "nombre": "Deserialization of Untrusted Data",
+        "patrones": ["ObjectInputStream", "readObject", "XMLDecoder", "readUnshared"],
+        "descripcion": "Deserialización de datos controlados por el atacante, permitiendo ejecución de código."
+    },
+    {
+        "cwe_id": "CWE-611",
+        "nombre": "Improper Restriction of XML External Entity Reference (XXE)",
+        "patrones": ["DocumentBuilderFactory", "SAXParserFactory", "XMLInputFactory"],
+        "descripcion": "Procesamiento de XML inseguro que permite lectura de archivos locales o SSRF."
+    },
+    {
+        "cwe_id": "CWE-327",
+        "nombre": "Use of a Broken or Risky Cryptographic Algorithm",
+        "patrones": ["MessageDigest.getInstance(\"MD5\")", "Cipher.getInstance(\"DES\")", "MessageDigest.getInstance(\"SHA-1\")"],
+        "descripcion": "Uso de algoritmos criptográficos obsoletos o inseguros (ej. MD5, DES)."
+    },
+    {
+        "cwe_id": "CWE-330",
+        "nombre": "Use of Insufficiently Random Values",
+        "patrones": ["java.util.Random", "Math.random()"],
+        "descripcion": "Uso de generadores de números pseudoaleatorios débiles en contextos de seguridad (se recomienda SecureRandom)."
+    },
+    {
+        "cwe_id": "CWE-94",
+        "nombre": "Improper Control of Generation of Code (Code Injection)",
+        "patrones": ["ScriptEngine", "eval", "SpelExpressionParser", "ExpressionParser"],
+        "descripcion": "Inyección de código dinámico o expresiones (ej. Spring Expression Language)."
+    },
+    {
+        "cwe_id": "CWE-79",
+        "nombre": "Improper Neutralization of Input During Web Page Generation (XSS)",
+        "patrones": ["getWriter().print", "PrintWriter", "ModelAndView", "<script>"],
+        "descripcion": "Cross-Site Scripting (XSS). Reflejo de datos no sanitizados hacia el cliente."
+    }
 ]
-
 def deducir_cwe(codigo_metodo: str) -> dict | None:
     """
     Analiza el código fuente de un método para detectar patrones de CWE.

@@ -44,14 +44,14 @@ jobs:
           EXISTING_PR=$(gh pr list --base test --head dev --state open --json number --jq '.[0].number')
 
           if [ -n "$EXISTING_PR" ]; then
-            echo "✅ Ya existe un PR abierto de dev → test: #$EXISTING_PR"
+            echo "Ya existe un PR abierto de dev → test: #$EXISTING_PR"
             echo "   Se actualizará automáticamente con los nuevos cambios."
           else
-            echo "📝 Creando nuevo PR de dev → test..."
+            echo " Creando nuevo PR de dev → test..."
             gh pr create \
               --base test \
               --head dev \
-              --title "🔄 [CI] Merge automático dev → test" \
+              --title " [CI] Merge automático dev → test" \
               --body "### PR generado automáticamente por el pipeline CI/CD
 
           **Rama origen:** \`dev\`
@@ -62,7 +62,7 @@ jobs:
           ---
           > Este PR fue creado automáticamente al hacer push a la rama \`dev\`.
           > El pipeline de seguridad y pruebas se ejecutará a continuación."
-            echo "✅ PR creado exitosamente."
+            echo "PR creado exitosamente."
           fi
 
       - name: Notificar creación de PR via Telegram
@@ -71,7 +71,7 @@ jobs:
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
             -d parse_mode="Markdown" \
-            -d text="📋 *PR Automático creado*%0A%0ASe ha creado/actualizado un PR de \`dev\` → \`test\`.%0AEl pipeline de validación iniciará en breve.%0A%0ACommit: \`${{ github.sha }}\`%0AAutor: ${{ github.actor }}"
+            -d text=" *PR Automático creado*%0A%0ASe ha creado/actualizado un PR de \`dev\` → \`test\`.%0AEl pipeline de validación iniciará en breve.%0A%0ACommit: \`${{ github.sha }}\`%0AAutor: ${{ github.actor }}"
 
   # ============================================================================
   # NODO 1: REVISIÓN DE SEGURIDAD (Modelo de Minería ML)
@@ -268,14 +268,14 @@ jobs:
           gh pr merge ${{ github.event.pull_request.number }} \
             --merge \
             --auto \
-            --subject "✅ [CI] Merge automático PR #${{ github.event.pull_request.number }} → test"
+            --subject "[CI] Merge automático PR #${{ github.event.pull_request.number }} → test"
 
       - name: Notificar éxito via Telegram
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
             -d parse_mode="Markdown" \
-            -d text="✅ *Pipeline exitoso*%0A%0A🔍 Seguridad: PASADO%0A🧪 JUnit + JaCoCo: PASADO%0A🔗 Integración RabbitMQ: PASADO%0A%0A🔀 PR \`#${{ github.event.pull_request.number }}\` mergeado a \`test\` correctamente."
+            -d text="*Pipeline exitoso*%0A%0A Seguridad: PASADO%0A JUnit + JaCoCo: PASADO%0A Integración RabbitMQ: PASADO%0A%0A PR \`#${{ github.event.pull_request.number }}\` mergeado a \`test\` correctamente."
 
   # ============================================================================
   # NODO 4.5: MERGE AUTOMÁTICO TEST → MAIN
@@ -315,7 +315,7 @@ jobs:
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
             -d parse_mode="Markdown" \
-            -d text="🔀 *Merge automático exitoso*%0A%0ARama \`test\` fusionada en \`main\` correctamente.%0A%0A🚀 Iniciando despliegue en producción..."
+            -d text=" *Merge automático exitoso*%0A%0ARama \`test\` fusionada en \`main\` correctamente.%0A%0A Iniciando despliegue en producción..."
 
   # ============================================================================
   # NODO 5: DESPLIEGUE EN PRODUCCIÓN (Docker + Render)
@@ -363,7 +363,7 @@ jobs:
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
             -d parse_mode="Markdown" \
-            -d text="🐳 *Paso 1/2: Imagen Docker Lista*%0A%0ASe ha construido y subido la imagen de Spring Boot a Docker Hub correctamente.%0A%0A⏳ Iniciando el despliegue automático en Render..."
+            -d text=" *Paso 1/2: Imagen Docker Lista*%0A%0ASe ha construido y subido la imagen de Spring Boot a Docker Hub correctamente.%0A%0A Iniciando el despliegue automático en Render..."
 
       # --- INICIO DEL DESPLIEGUE EN RENDER ---
       - name: Disparar re-deploy en Render (Deploy Hook)
@@ -386,7 +386,7 @@ jobs:
             STATUS=$(curl -o /dev/null -s -w "%{http_code}\n" $URL)
             
             if [ "$STATUS" -eq 200 ] || [ "$STATUS" -eq 401 ] || [ "$STATUS" -eq 403 ] || [ "$STATUS" -eq 404 ]; then
-              echo "✅ ¡La aplicación está arriba y respondiendo en Producción! (HTTP $STATUS)"
+              echo " ¡La aplicación está arriba y respondiendo en Producción! (HTTP $STATUS)"
               exit 0
             fi
             
@@ -395,7 +395,7 @@ jobs:
             ELAPSED=$((ELAPSED + 15))
           done
           
-          echo "❌ Tiempo de espera agotado. El contenedor no logró arrancar a tiempo."
+          echo " Tiempo de espera agotado. El contenedor no logró arrancar a tiempo."
           exit 1
 
       # --- MENSAJE FINAL: DESPLIEGUE EXITOSO ---
@@ -405,7 +405,7 @@ jobs:
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
             -d parse_mode="Markdown" \
-            -d text="🚀 *Paso 2/2: Despliegue Exitoso*%0A%0AEl contenedor ya está online y respondiendo peticiones.%0ARama: \`main\`%0ACommit: \`${{ github.sha }}\`"
+            -d text=" *Paso 2/2: Despliegue Exitoso*%0A%0AEl contenedor ya está online y respondiendo peticiones.%0ARama: \`main\`%0ACommit: \`${{ github.sha }}\`"
 
       # --- MENSAJE DE FALLO GLOBAL ---
       - name: Notificar fallo del despliegue via Telegram
@@ -414,4 +414,4 @@ jobs:
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
             -d parse_mode="Markdown" \
-            -d text="❌ *ERROR EN EL PIPELINE DE PRODUCCIÓN*%0A%0AAlgo falló durante la creación de Docker o el arranque en Render.%0ARama: \`main\`%0ARevisa los logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            -d text=" *ERROR EN EL PIPELINE DE PRODUCCIÓN*%0A%0AAlgo falló durante la creación de Docker o el arranque en Render.%0ARama: \`main\`%0ARevisa los logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
