@@ -11,9 +11,15 @@ on:
     branches:
       - dev
       - main
+    paths:
+      - 'backend/**'
+      - 'seguridad/**'
   pull_request:
     branches:
       - test
+    paths:
+      - 'backend/**'
+      - 'seguridad/**'
 
 jobs:
 
