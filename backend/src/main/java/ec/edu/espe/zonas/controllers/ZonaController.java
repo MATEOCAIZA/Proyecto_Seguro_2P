@@ -2,7 +2,6 @@ package ec.edu.espe.zonas.controllers;
 
 import java.util.List;
 import java.util.Objects;
-import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
@@ -16,13 +15,12 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import ec.edu.espe.zonas.dtos.ZonaRequestDto;
 import ec.edu.espe.zonas.dtos.ZonaResponseDto;
 import ec.edu.espe.zonas.services.ZonaServicio;
-import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Valid;
-import jakarta.validation.Validator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -40,7 +38,6 @@ public class ZonaController {
             Pattern.compile("^[\\p{L}\\p{N} \\-]{1,32}$");
 
     private final ZonaServicio zonaServicio;
-    private final Validator validator;
 
     @GetMapping("/")
     public ResponseEntity<List<ZonaResponseDto>> listarZonas() {
@@ -51,6 +48,8 @@ public class ZonaController {
                 throw new IllegalStateException("El servicio retornó una lista nula");
             }
             return ResponseEntity.ok(zonas);
+        } catch (ResponseStatusException e) {
+            throw e;
         } catch (IllegalArgumentException e) {
             log.warn("Parámetro inválido al listar zonas: {}", e.getMessage());
             throw e;
@@ -64,14 +63,6 @@ public class ZonaController {
     public ResponseEntity<ZonaResponseDto> crearZona(@Valid @RequestBody ZonaRequestDto request) {
         try {
             Objects.requireNonNull(request, "El cuerpo de la solicitud no puede ser nulo");
-            Set<ConstraintViolation<ZonaRequestDto>> violations = validator.validate(request);
-            boolean esValido = violations.isEmpty();
-            if (!esValido) {
-                String detalle = violations.stream()
-                        .map(ConstraintViolation::getMessage)
-                        .reduce("", (a, b) -> a + "; " + b);
-                throw new IllegalArgumentException("Datos de zona inválidos: " + detalle);
-            }
             boolean nombreSeguro = request.getNombre() != null
                     && NOMBRE_ZONA_PATTERN.matcher(request.getNombre()).matches();
             if (!nombreSeguro) {
@@ -79,6 +70,8 @@ public class ZonaController {
             }
             ZonaResponseDto creada = zonaServicio.crearZona(request);
             return new ResponseEntity<>(creada, HttpStatus.CREATED);
+        } catch (ResponseStatusException e) {
+            throw e;
         } catch (IllegalArgumentException e) {
             log.warn("Datos inválidos al crear zona: {}", e.getMessage());
             throw e;
@@ -99,16 +92,15 @@ public class ZonaController {
             if (!idValido) {
                 throw new IllegalArgumentException("El identificador de zona no tiene formato UUID válido");
             }
-            Set<ConstraintViolation<ZonaRequestDto>> violations = validator.validate(request);
-            boolean sinViolaciones = violations.isEmpty();
-            if (!sinViolaciones) {
-                String detalle = violations.stream()
-                        .map(ConstraintViolation::getMessage)
-                        .reduce("", (a, b) -> a + "; " + b);
-                throw new IllegalArgumentException("Datos de zona inválidos: " + detalle);
+            boolean nombreSeguro = request.getNombre() != null
+                    && NOMBRE_ZONA_PATTERN.matcher(request.getNombre()).matches();
+            if (!nombreSeguro) {
+                throw new IllegalArgumentException("El nombre de zona contiene caracteres no permitidos");
             }
             ZonaResponseDto resultado = zonaServicio.actualizarZona(idZona, request);
             return ResponseEntity.ok(resultado);
+        } catch (ResponseStatusException e) {
+            throw e;
         } catch (IllegalArgumentException e) {
             log.warn("Argumento inválido al actualizar zona {}: {}", idZona, e.getMessage());
             throw e;
@@ -128,6 +120,8 @@ public class ZonaController {
             }
             zonaServicio.activarDesactivar(idZona);
             return ResponseEntity.ok().build();
+        } catch (ResponseStatusException e) {
+            throw e;
         } catch (IllegalArgumentException e) {
             log.warn("Zona no encontrada al cambiar estado {}: {}", idZona, e.getMessage());
             throw e;
@@ -137,6 +131,3 @@ public class ZonaController {
         }
     }
 }
-
-
-
