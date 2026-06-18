@@ -1,4 +1,4 @@
-# 🛡️ Guía Técnica: Pipeline de Machine Learning para Detección de Vulnerabilidades en Java
+# 🛡️ Guía Técnica: Pipeline de Machine Learning para Detección de Vulnerabilidades en Java 
 
 ## Resumen General
 
