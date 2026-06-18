@@ -35,6 +35,10 @@ public class ZonaController {
     private static final Pattern UUID_PATTERN =
             Pattern.compile("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
 
+    /** Solo letras, números, espacios y guiones — previene inyección en nombre de zona. */
+    private static final Pattern NOMBRE_ZONA_PATTERN =
+            Pattern.compile("^[\\p{L}\\p{N} \\-]{1,32}$");
+
     private final ZonaServicio zonaServicio;
     private final Validator validator;
 
@@ -67,6 +71,11 @@ public class ZonaController {
                         .map(ConstraintViolation::getMessage)
                         .reduce("", (a, b) -> a + "; " + b);
                 throw new IllegalArgumentException("Datos de zona inválidos: " + detalle);
+            }
+            boolean nombreSeguro = request.getNombre() != null
+                    && NOMBRE_ZONA_PATTERN.matcher(request.getNombre()).matches();
+            if (!nombreSeguro) {
+                throw new IllegalArgumentException("El nombre de zona contiene caracteres no permitidos");
             }
             ZonaResponseDto creada = zonaServicio.crearZona(request);
             return new ResponseEntity<>(creada, HttpStatus.CREATED);
