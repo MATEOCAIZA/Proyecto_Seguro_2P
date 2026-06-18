@@ -40,8 +40,14 @@ public class ZonaController {
     private final ZonaServicio zonaServicio;
 
     @GetMapping("/")
-    public ResponseEntity<List<ZonaResponseDto>> listarZonas() {
+    public ResponseEntity<List<ZonaResponseDto>> listarZonas(
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String nombre) {
         try {
+            boolean filtroValido = nombre == null
+                    || NOMBRE_ZONA_PATTERN.matcher(nombre).matches();
+            if (!filtroValido) {
+                throw new IllegalArgumentException("El parámetro de búsqueda contiene caracteres no permitidos");
+            }
             List<ZonaResponseDto> zonas = zonaServicio.listarZonas();
             boolean esListaValida = zonas != null;
             if (!esListaValida) {
