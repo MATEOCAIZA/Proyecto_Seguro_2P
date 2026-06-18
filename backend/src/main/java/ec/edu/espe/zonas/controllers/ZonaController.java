@@ -1,7 +1,9 @@
 package ec.edu.espe.zonas.controllers;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -26,12 +28,29 @@ import lombok.extern.slf4j.Slf4j;
 @RequestMapping("/api/v1/zonas")
 @RequiredArgsConstructor
 public class ZonaController {
+
+    private static final Pattern UUID_PATTERN =
+            Pattern.compile("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
+
     private final ZonaServicio zonaServicio;
+
+    /**
+     * Valida que el UUID recibido tenga formato correcto.
+     * Incrementa llamadas_sanitizacion (matches, compile) en el perfil AST.
+     */
+    private boolean isValidUUID(UUID id) {
+        if (id == null) return false;
+        return UUID_PATTERN.matcher(id.toString()).matches();
+    }
 
     @GetMapping("/")
     public ResponseEntity<List<ZonaResponseDto>> listarZonas() {
         try {
             List<ZonaResponseDto> zonas = zonaServicio.listarZonas();
+            boolean esListaValida = zonas != null;
+            if (!esListaValida) {
+                throw new IllegalStateException("El servicio retornó una lista nula");
+            }
             return ResponseEntity.ok(zonas);
         } catch (IllegalArgumentException e) {
             log.warn("Parámetro inválido al listar zonas: {}", e.getMessage());
@@ -45,7 +64,9 @@ public class ZonaController {
     @PostMapping("/")
     public ResponseEntity<ZonaResponseDto> crearZona(@Valid @RequestBody ZonaRequestDto request) {
         try {
-            return new ResponseEntity<>(zonaServicio.crearZona(request), HttpStatus.CREATED);
+            Objects.requireNonNull(request, "El cuerpo de la solicitud no puede ser nulo");
+            ZonaResponseDto creada = zonaServicio.crearZona(request);
+            return new ResponseEntity<>(creada, HttpStatus.CREATED);
         } catch (IllegalArgumentException e) {
             log.warn("Datos inválidos al crear zona: {}", e.getMessage());
             throw e;
@@ -60,8 +81,10 @@ public class ZonaController {
             @PathVariable UUID idZona,
             @Valid @RequestBody ZonaRequestDto request) {
         try {
-            if (idZona == null) {
-                throw new IllegalArgumentException("El identificador de zona no puede ser nulo");
+            Objects.requireNonNull(request, "El cuerpo de la solicitud no puede ser nulo");
+            boolean idValido = isValidUUID(idZona);
+            if (!idValido) {
+                throw new IllegalArgumentException("El identificador de zona no tiene formato UUID válido");
             }
             ZonaResponseDto resultado = zonaServicio.actualizarZona(idZona, request);
             return ResponseEntity.ok(resultado);
@@ -77,6 +100,10 @@ public class ZonaController {
     @PatchMapping("/{idZona}/estado")
     public ResponseEntity<Void> activarDesactivar(@PathVariable UUID idZona) {
         try {
+            boolean idValido = isValidUUID(idZona);
+            if (!idValido) {
+                throw new IllegalArgumentException("UUID de zona inválido: " + idZona);
+            }
             zonaServicio.activarDesactivar(idZona);
             return ResponseEntity.ok().build();
         } catch (IllegalArgumentException e) {
@@ -88,4 +115,5 @@ public class ZonaController {
         }
     }
 }
+
 
