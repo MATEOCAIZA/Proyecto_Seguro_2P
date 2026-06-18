@@ -20,7 +20,6 @@ jobs:
   # ============================================================================
   # NODO 0: CREACIÓN AUTOMÁTICA DE PR (dev → test)
   # Se ejecuta al hacer push a 'dev'. Crea un PR automático hacia 'test'.
-  # Si ya existe un PR abierto de dev → test, no crea uno duplicado.
   # ============================================================================
   create_pr:
     name: "Crear PR automático (dev → test)"
