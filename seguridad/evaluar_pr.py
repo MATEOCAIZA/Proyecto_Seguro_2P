@@ -95,6 +95,15 @@ def obtener_archivos_java_del_pr():
     archivos_java = []
     for archivo in pr.get_files():
         if archivo.filename.endswith(".java") and archivo.status != "removed":
+            # ── Filtro de archivos de test ──────────────────────────
+            # Los tests unitarios (JUnit/Mockito) generan falsos
+            # positivos porque su perfil AST (muchas llamadas a mocks,
+            # cero sanitización, muchos literales) no coincide con el
+            # dataset de entrenamiento (Juliet Java 1.3).
+            # Solo se analiza código de PRODUCCIÓN.
+            if "/src/test/" in archivo.filename or archivo.filename.endswith(("Test.java", "Tests.java", "IT.java")):
+                print(f"   ⏭ Omitido (archivo de test): {archivo.filename}")
+                continue
             try:
                 # Obtener el contenido del archivo en la rama del PR
                 contenido = repo.get_contents(
