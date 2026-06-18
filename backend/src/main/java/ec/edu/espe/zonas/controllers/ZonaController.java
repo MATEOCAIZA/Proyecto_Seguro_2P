@@ -42,10 +42,10 @@ public class ZonaController {
 
     }
 
-    @PatchMapping("/{idZona}/estado")
+    /* @PatchMapping("/{idZona}/estado")
     public ResponseEntity<Void> activarDesactivar(@PathVariable UUID idZona){
         zonaServicio.activarDesactivar(idZona);
         return ResponseEntity.ok().build();
-    }
+    }*/
 
 }
