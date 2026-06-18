@@ -10,7 +10,7 @@ import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
 
 /**
- * Consumidor de RabbitMQ que escucha la cola de solicitudes de análisis de código.
+ * Consumidor de RabbitMQ que escucha la cola de solicitudes de análisis de código. 
  */
 @Slf4j
 @Component
