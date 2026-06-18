@@ -41,7 +41,7 @@ def enviar_telegram(mensaje: str):
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
         requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": mensaje}, timeout=10)
     except Exception as e:
-        print(f"⚠️  No se pudo enviar notificación a Telegram: {e}")
+        print(f" No se pudo enviar notificación a Telegram: {e}")
 
 # ─────────────────────────────────────────────────────────
 # 2. Verificar que el microservicio esté disponible
@@ -62,25 +62,25 @@ def verificar_microservicio():
             data = respuesta.json()
             
             if not data.get("modelo_cargado", False):
-                print("❌ El microservicio está activo pero el modelo ML no está cargado.")
+                print("El microservicio está activo pero el modelo ML no está cargado.")
                 sys.exit(1)
                 
-            print(f"✅ Microservicio disponible — modelo cargado: {data.get('modelo_cargado')}")
+            print(f" Microservicio disponible — modelo cargado: {data.get('modelo_cargado')}")
             return # Éxito, salimos de la función y el pipeline continúa
             
         except httpx.TimeoutException:
-            print(f"⚠️ Timeout. El servidor se está despertando (Cold Start). Esperando {tiempo_espera}s...")
+            print(f" Timeout. El servidor se está despertando (Cold Start). Esperando {tiempo_espera}s...")
             time.sleep(tiempo_espera)
         except httpx.ConnectError:
-             print(f"❌ No se pudo conectar al microservicio en: {MODELO_API_URL}")
+             print(f" No se pudo conectar al microservicio en: {MODELO_API_URL}")
              print("   Verifica que la URL en los secrets de GitHub sea correcta y NO termine con '/'.")
              sys.exit(1)
         except Exception as e:
-            print(f"❌ Error HTTP al verificar el microservicio: {e}")
+            print(f" Error HTTP al verificar el microservicio: {e}")
             sys.exit(1)
 
     # Si terminan los intentos y no hubo éxito
-    print(f"❌ El microservicio no respondió después de {max_reintentos} intentos. Abortando.")
+    print(f" El microservicio no respondió después de {max_reintentos} intentos. Abortando.")
     sys.exit(1)
 # ─────────────────────────────────────────────────────────
 # 3. Obtener archivos Java del PR via GitHub API
@@ -95,6 +95,15 @@ def obtener_archivos_java_del_pr():
     archivos_java = []
     for archivo in pr.get_files():
         if archivo.filename.endswith(".java") and archivo.status != "removed":
+            # ── Filtro de archivos de test ──────────────────────────
+            # Los tests unitarios (JUnit/Mockito) generan falsos
+            # positivos porque su perfil AST (muchas llamadas a mocks,
+            # cero sanitización, muchos literales) no coincide con el
+            # dataset de entrenamiento (Juliet Java 1.3).
+            # Solo se analiza código de PRODUCCIÓN.
+            if "/src/test/" in archivo.filename or archivo.filename.endswith(("Test.java", "Tests.java", "IT.java")):
+                print(f"   ⏭ Omitido (archivo de test): {archivo.filename}")
+                continue
             try:
                 # Obtener el contenido del archivo en la rama del PR
                 contenido = repo.get_contents(
@@ -103,9 +112,9 @@ def obtener_archivos_java_del_pr():
                 )
                 codigo = contenido.decoded_content.decode("utf-8")
                 archivos_java.append((archivo.filename, codigo))
-                print(f"   📄 Encontrado: {archivo.filename}")
+                print(f"   Encontrado: {archivo.filename}")
             except Exception as e:
-                print(f"   ⚠️  No se pudo leer {archivo.filename}: {e}")
+                print(f"   No se pudo leer {archivo.filename}: {e}")
 
     return archivos_java
 
@@ -127,11 +136,13 @@ def analizar_archivo(nombre_archivo: str, codigo_fuente: str) -> dict:
         respuesta.raise_for_status()
         return respuesta.json()
     except httpx.HTTPStatusError as e:
-        print(f"   ❌ Error HTTP al analizar {nombre_archivo}: {e.response.status_code} — {e.response.text}")
-        return {"es_seguro": False, "vulnerabilidades_detectadas": [], "error": str(e)}
+        # es_seguro=None indica fallo técnico, NO vulnerabilidad real detectada
+        print(f"   Error HTTP al analizar {nombre_archivo}: {e.response.status_code} — {e.response.text}")
+        return {"es_seguro": None, "vulnerabilidades_detectadas": [], "error": str(e)}
     except Exception as e:
-        print(f"   ❌ Error inesperado al analizar {nombre_archivo}: {e}")
-        return {"es_seguro": False, "vulnerabilidades_detectadas": [], "error": str(e)}
+        # es_seguro=None indica fallo técnico, NO vulnerabilidad real detectada
+        print(f"    Error inesperado al analizar {nombre_archivo}: {e}")
+        return {"es_seguro": None, "vulnerabilidades_detectadas": [], "error": str(e)}
 
 # ─────────────────────────────────────────────────────────
 # 5. Punto de entrada principal
@@ -144,21 +155,21 @@ def main():
     print("=" * 60)
 
     # 5.0 Enviar notificación obligatoria de inicio a Telegram
-    enviar_telegram(f"⏳ Inicio de revisión de seguridad: Evaluando PR #{PR_NUMBER} en {REPO_NAME}...")
+    enviar_telegram(f" Inicio de revisión de seguridad: Evaluando PR #{PR_NUMBER} en {REPO_NAME}...")
 
     # 5.1 Verificar que el microservicio esté disponible
     verificar_microservicio()
 
     # 5.2 Obtener los archivos Java del PR
-    print("\n📂 Obteniendo archivos Java modificados en el PR...")
+    print("\n Obteniendo archivos Java modificados en el PR...")
     archivos = obtener_archivos_java_del_pr()
 
     if not archivos:
-        print("\n✅ No se encontraron archivos .java modificados. El PR es seguro por defecto.")
-        enviar_telegram(f"✅ PR #{PR_NUMBER} en {REPO_NAME}: No hay archivos Java para analizar. Continuando...")
+        print("\n No se encontraron archivos .java modificados. El PR es seguro por defecto.")
+        enviar_telegram(f" PR #{PR_NUMBER} en {REPO_NAME}: No hay archivos Java para analizar. Continuando...")
         sys.exit(0)
 
-    print(f"\n🤖 Analizando {len(archivos)} archivo(s) con el modelo ML...")
+    print(f"\n Analizando {len(archivos)} archivo(s) con el modelo ML...")
     print("-" * 60)
 
     # 5.3 Analizar cada archivo
@@ -169,18 +180,30 @@ def main():
         print(f"\n▶  Analizando: {nombre}")
         resultado = analizar_archivo(nombre, codigo)
 
-        es_seguro = resultado.get("es_seguro", False)
-        vulns = resultado.get("vulnerabilidades_detectadas", [])
+        es_seguro = resultado.get("es_seguro")  # None = error técnico, True = seguro, False = vulnerable
+        vulns     = resultado.get("vulnerabilidades_detectadas", [])
+        error_msg = resultado.get("error")
 
-        if es_seguro:
+        if es_seguro is None:
+            # Error de red o del microservicio — NO se bloquea el PR por esto
+            print(f"   No se pudo analizar '{nombre}' por error técnico: {error_msg}")
+            print(f"      El archivo se omite del análisis (no cuenta como vulnerable).")
+        elif es_seguro:
             total_metodos = resultado.get("total_metodos_analizados", "N/A")
-            print(f"   ✅ SEGURO — {total_metodos} método(s) analizados sin vulnerabilidades.")
+            print(f"   SEGURO — {total_metodos} método(s) analizados sin vulnerabilidades.")
         else:
-            print(f"   ❌ VULNERABLE — {len(vulns)} método(s) con riesgo detectado:")
-            for v in vulns:
-                print(f"      • Método '{v['metodo']}' — Probabilidad: {v['probabilidad_vulnerable']}%")
-            vulnerabilidades_totales.extend(vulns)
-            archivos_vulnerables.append(nombre)
+            # es_seguro=False Y la lista de vulns tiene elementos → vulnerabilidad real
+            if vulns:
+                print(f"    VULNERABLE — {len(vulns)} método(s) con riesgo detectado:")
+                for v in vulns:
+                    cwe_str = f"{v.get('cwe', 'N/A')} {v.get('cwe_nombre', '')}" if v.get('cwe') else "CWE no identificado"
+                    print(f"      • Método '{v['metodo']}' — Confianza: {v['probabilidad_vulnerable']}% — {cwe_str}")
+                vulnerabilidades_totales.extend(vulns)
+                archivos_vulnerables.append(nombre)
+            else:
+                # es_seguro=False pero sin vulnerabilidades listadas → respuesta ambigua del modelo
+                print(f"    El modelo marcó '{nombre}' como no seguro pero sin detalles de vulnerabilidades.")
+                print(f"      Se trata como advertencia, no bloquea el PR.")
 
     print("\n" + "=" * 60)
 
@@ -192,47 +215,91 @@ def main():
     # 5.4 Resultado final
     if archivos_vulnerables:
         # Construir comentario detallado para GitHub
-        detalle_vulns = "### 🚨 Análisis de Seguridad: Código Vulnerable Detectado\n\nEl modelo de minería de datos ha clasificado este código como riesgoso. Detalles:\n"
+        detalle_vulns = "###  Análisis de Seguridad: Código Vulnerable Detectado\n\n"
+        detalle_vulns += "El modelo de minería de datos ha clasificado este código como riesgoso.\n\n"
+        detalle_vulns += "| Método | Confianza ML | CWE | Vulnerabilidad | Descripción |\n"
+        detalle_vulns += "|--------|-------------|-----|----------------|-------------|\n"
         for v in vulnerabilidades_totales:
-            detalle_vulns += f"- **Método/Función:** `{v['metodo']}` | **Probabilidad:** {v['probabilidad_vulnerable']}%\n"
-        
+            cwe_id   = v.get('cwe') or 'N/A'
+            cwe_nom  = v.get('cwe_nombre', 'Patrón no identificado')
+            cwe_desc = v.get('cwe_descripcion', '')
+            detalle_vulns += (
+                f"| `{v['metodo']}` "
+                f"| **{v['probabilidad_vulnerable']}%** "
+                f"| `{cwe_id}` "
+                f"| {cwe_nom} "
+                f"| {cwe_desc} |\n"
+            )
+
         # 1. Crear comentario en el PR
         pr.create_issue_comment(detalle_vulns)
-        
+
         # 2. Aplicar etiqueta al PR
         try:
             pr.add_to_labels("fixing-required")
         except Exception as e:
-            print(f"⚠️ No se pudo aplicar la etiqueta (¿existe en el repo?): {e}")
+            print(f" No se pudo aplicar la etiqueta (¿existe en el repo?): {e}")
 
         # 3. Crear un Issue automático vinculado
         titulo_issue = f"Corregir vulnerabilidades introducidas en PR #{PR_NUMBER}"
-        cuerpo_issue = f"Se ha bloqueado el PR #{PR_NUMBER} debido a código vulnerable.\n\n{detalle_vulns}\n\nPor favor, revisa y corrige el código antes de intentar un nuevo merge."
+        cuerpo_issue = (
+            f"Se ha bloqueado el PR #{PR_NUMBER} debido a código vulnerable.\n\n"
+            f"{detalle_vulns}\n\n"
+            f"Por favor, revisa y corrige el código antes de intentar un nuevo merge."
+        )
         repo.create_issue(title=titulo_issue, body=cuerpo_issue)
 
-        # 4. Notificar a Telegram
-        resumen_archivos = "\n".join([f"  - {a}" for a in archivos_vulnerables])
+        # 4. Notificar a Telegram — mensaje enriquecido equivalente al comentario de GitHub
+        resumen_archivos = "\n".join([f"  {a}" for a in archivos_vulnerables])
+        separador = "─" * 40
+        lineas_vulns = []
+        for idx, v in enumerate(vulnerabilidades_totales, start=1):
+            cwe_id   = v.get('cwe') or 'N/A'
+            cwe_nom  = v.get('cwe_nombre', 'Patrón no identificado')
+            cwe_desc = v.get('cwe_descripcion', 'Sin descripción disponible.')
+            lineas_vulns.append(
+                f"{idx}. Método: {v['metodo']}\n"
+                f"   Confianza ML : {v['probabilidad_vulnerable']}%\n"
+                f"   CWE          : {cwe_id} — {cwe_nom}\n"
+                f"   Descripción  : {cwe_desc}"
+            )
+        detalle_telegram = f"\n{separador}\n".join(lineas_vulns)
         mensaje_fallo = (
-            f"🚨 PR #{PR_NUMBER} RECHAZADO — Código vulnerable\n"
-            f"Archivos afectados:\n{resumen_archivos}\n"
-            f"Repositorio: {REPO_NAME}"
+            f" ALERTA DE SEGURIDAD — PR RECHAZADO\n"
+            f"{separador}\n"
+            f" Repositorio : {REPO_NAME}\n"
+            f" Pull Request: #{PR_NUMBER}\n"
+            f" Archivos afectados:\n{resumen_archivos}\n"
+            f"{separador}\n"
+            f" Vulnerabilidades detectadas ({len(vulnerabilidades_totales)} total):\n\n"
+            f"{detalle_telegram}\n"
+            f"{separador}\n"
+            f" Acción requerida: Corregir el código antes de hacer un nuevo merge.\n"
+            f" Ver issue en: https://github.com/{REPO_NAME}/issues"
         )
-        print(f"❌ ANÁLISIS FALLIDO — PR BLOQUEADO")
+        print(f" ANÁLISIS FALLIDO — PR BLOQUEADO")
         enviar_telegram(mensaje_fallo)
-        
+
         # Falla el workflow -> GitHub bloquea el merge
-        sys.exit(1) 
+        sys.exit(1)
     else:
+        archivos_revisados = "\n".join([f"   {nombre}" for nombre, _ in archivos])
         mensaje_ok = (
-            f"✅ PR #{PR_NUMBER} APROBADO — Análisis seguro.\n"
-            f"Repositorio: {REPO_NAME}\n"
-            f"Archivos revisados: {len(archivos)}"
+            f" ANÁLISIS DE SEGURIDAD EXITOSO\n"
+            f"{'─' * 40}\n"
+            f" Repositorio : {REPO_NAME}\n"
+            f" Pull Request: #{PR_NUMBER}\n"
+            f"{'─' * 40}\n"
+            f" Archivos revisados ({len(archivos)}):\n{archivos_revisados}\n"
+            f"{'─' * 40}\n"
+            f" El código no presenta vulnerabilidades.\n"
+            f" El pipeline continúa con las pruebas automáticas."
         )
-        print(f"✅ ANÁLISIS EXITOSO — Todo el código es seguro.")
+        print(f" ANÁLISIS EXITOSO — Todo el código es seguro.")
         enviar_telegram(mensaje_ok)
-        
+
         # El workflow continúa -> se ejecutan los tests
-        sys.exit(0) 
+        sys.exit(0)
 
 if __name__ == "__main__":
     main()

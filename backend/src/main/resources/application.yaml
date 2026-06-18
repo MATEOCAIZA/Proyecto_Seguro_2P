@@ -16,6 +16,10 @@ spring:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
 
+  # === AQUÍ ESTÁ EL CAMBIO ===
+  rabbitmq:
+    addresses: ${RABBITMQ_URL:amqp://guest:guest@localhost:5672}
+
 # Microservicio de análisis de vulnerabilidades (FastAPI Python)
 analisis:
   microservicio:
