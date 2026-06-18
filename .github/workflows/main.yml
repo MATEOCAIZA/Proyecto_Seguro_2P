@@ -44,7 +44,9 @@ jobs:
 
       - name: Crear Pull Request de dev → test
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Se cambió GITHUB_TOKEN por PAT_AUTOMATION para permitir 
+          # que la creación del PR dispare los siguientes nodos del pipeline.
+          GH_TOKEN: ${{ secrets.PAT_AUTOMATION }}
         run: |
           # Verificar si ya existe un PR abierto de dev → test
           EXISTING_PR=$(gh pr list --base test --head dev --state open --json number --jq '.[0].number')
@@ -78,7 +80,6 @@ jobs:
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
             -d parse_mode="Markdown" \
             -d text=" *PR Automático creado*%0A%0ASe ha creado/actualizado un PR de \`dev\` → \`test\`.%0AEl pipeline de validación iniciará en breve.%0A%0ACommit: \`${{ github.sha }}\`%0AAutor: ${{ github.actor }}"
-
   # ============================================================================
   # NODO 1: REVISIÓN DE SEGURIDAD (Modelo de Minería ML)
   # Evalúa el código del PR con el modelo predictivo Python.
