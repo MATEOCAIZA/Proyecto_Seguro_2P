@@ -6,6 +6,7 @@ import javalang
 import pandas as pd
 import uvicorn
 import os
+from cwe_forense import deducir_cwe
 
 from feature_extractor import (
     extraer_caracteristicas_metodo,
@@ -43,107 +44,6 @@ class PeticionCodigo(BaseModel):
     codigo_fuente: str
     nombre_archivo: str = "Desconocido.java"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# MÓDULO FORENSE: Mapeo de patrones de código → CWE
-# Si el Juez (ML) detecta vulnerabilidad, el Forense deduce el CWE concreto
-# basándose en los tokens peligrosos presentes en el código fuente del MÉTODO
-# (no del archivo completo, ver extraer_codigo_fuente_metodo).
-# ─────────────────────────────────────────────────────────────────────────────
-CWE_MAPPING = [
-    {
-        "cwe_id": "CWE-78",
-        "nombre": "OS Command Injection",
-        "patrones": ["exec", "Runtime", "ProcessBuilder", "getRuntime"],
-        "descripcion": "Ejecución arbitraria de comandos del sistema operativo."
-    },
-    {
-        "cwe_id": "CWE-89",
-        "nombre": "SQL Injection",
-        "patrones": ["executeQuery", "createQuery", "nativeQuery",
-                      "createNativeQuery", "Statement"],
-        "descripcion": "Inyección de SQL que permite manipular la base de datos."
-    },
-    {
-        "cwe_id": "CWE-319",
-        "nombre": "Cleartext Transmission of Sensitive Information",
-        "patrones": ["Socket", "getOutputStream", "HttpURLConnection",
-                      "URL", "openConnection", "getInputStream"],
-        "descripcion": "Transmisión de datos sensibles sin cifrado."
-    },
-    {
-        "cwe_id": "CWE-200",
-        "nombre": "Exposure of Sensitive Information",
-        "patrones": ["getenv", "System.getProperty", "printStackTrace",
-                      "getPassword", "getSecret", "getKey"],
-        "descripcion": "Exposición de información confidencial del entorno o sistema."
-    },
-    {
-        "cwe_id": "CWE-22",
-        "nombre": "Path Traversal",
-        "patrones": ["File", "FileInputStream", "FileOutputStream",
-                      "FileReader", "FileWriter", "Paths.get", "resolve"],
-        "descripcion": "Acceso a rutas de archivos fuera del directorio permitido."
-    },
-    {
-        "cwe_id": "CWE-502",
-        "nombre": "Deserialization of Untrusted Data",
-        "patrones": ["ObjectInputStream", "readObject", "XMLDecoder", "readUnshared"],
-        "descripcion": "Deserialización de datos controlados por el atacante, permitiendo ejecución de código."
-    },
-    {
-        "cwe_id": "CWE-611",
-        "nombre": "Improper Restriction of XML External Entity Reference (XXE)",
-        "patrones": ["DocumentBuilderFactory", "SAXParserFactory", "XMLInputFactory"],
-        "descripcion": "Procesamiento de XML inseguro que permite lectura de archivos locales o SSRF."
-    },
-    {
-        "cwe_id": "CWE-327",
-        "nombre": "Use of a Broken or Risky Cryptographic Algorithm",
-        "patrones": ["MessageDigest.getInstance(\"MD5\")", "Cipher.getInstance(\"DES\")", "MessageDigest.getInstance(\"SHA-1\")"],
-        "descripcion": "Uso de algoritmos criptográficos obsoletos o inseguros (ej. MD5, DES)."
-    },
-    {
-        "cwe_id": "CWE-330",
-        "nombre": "Use of Insufficiently Random Values",
-        "patrones": ["java.util.Random", "Math.random()"],
-        "descripcion": "Uso de generadores de números pseudoaleatorios débiles en contextos de seguridad (se recomienda SecureRandom)."
-    },
-    {
-        "cwe_id": "CWE-94",
-        "nombre": "Improper Control of Generation of Code (Code Injection)",
-        "patrones": ["ScriptEngine", "eval", "SpelExpressionParser", "ExpressionParser"],
-        "descripcion": "Inyección de código dinámico o expresiones (ej. Spring Expression Language)."
-    },
-    {
-        "cwe_id": "CWE-79",
-        "nombre": "Improper Neutralization of Input During Web Page Generation (XSS)",
-        "patrones": ["getWriter().print", "PrintWriter", "ModelAndView", "<script>"],
-        "descripcion": "Cross-Site Scripting (XSS). Reflejo de datos no sanitizados hacia el cliente."
-    }
-]
-
-
-def deducir_cwe(codigo_metodo: str) -> dict | None:
-    """
-    Analiza el código fuente de un método para detectar patrones de CWE.
-    Retorna el CWE más probable o None si no se identifica ninguno.
-    """
-    coincidencias = []
-    for regla in CWE_MAPPING:
-        score = sum(1 for patron in regla["patrones"] if patron in codigo_metodo)
-        if score > 0:
-            coincidencias.append((score, regla))
-
-    if not coincidencias:
-        return None
-
-    coincidencias.sort(key=lambda x: x[0], reverse=True)
-    mejor = coincidencias[0][1]
-    return {
-        "cwe_id": mejor["cwe_id"],
-        "nombre": mejor["nombre"],
-        "descripcion": mejor["descripcion"]
-    }
 
 
 # 4. Health Check — Para que el backend Java verifique disponibilidad
