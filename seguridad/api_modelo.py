@@ -7,6 +7,13 @@ import pandas as pd
 import uvicorn
 import os
 
+from feature_extractor import (
+    extraer_caracteristicas_metodo,
+    calcular_ratios,
+    extraer_codigo_fuente_metodo,
+    FEATURE_COLUMNS
+)
+
 # 1. Inicializar la API y cargar el modelo en memoria al arrancar
 app = FastAPI(
     title="API de Seguridad CI/CD",
@@ -36,21 +43,11 @@ class PeticionCodigo(BaseModel):
     codigo_fuente: str
     nombre_archivo: str = "Desconocido.java"
 
-# 3. Funciones de Extracción (Reglas de negocio del modelo)
-# Lista más específica a Java puro (evitando choques con JPA)
-FUNCIONES_PELIGROSAS = [
-    'exec', 'prepareStatement', 'getOutputStream',
-    'Socket', 'Runtime', 'getenv', 'ProcessBuilder',
-    'ObjectInputStream', 'readObject', # Deserialización insegura
-    'DocumentBuilderFactory', 'SAXParserFactory', # XXE (XML External Entities)
-    'MessageDigest', 'Cipher', 'Random', # Criptografía débil
-    'ScriptEngine', 'eval', # Inyección de código / EL
-    'PrintWriter', 'getWriter' # Potencial XSS reflejado
-]
 # ─────────────────────────────────────────────────────────────────────────────
 # MÓDULO FORENSE: Mapeo de patrones de código → CWE
 # Si el Juez (ML) detecta vulnerabilidad, el Forense deduce el CWE concreto
-# basándose en los tokens peligrosos presentes en el código fuente del método.
+# basándose en los tokens peligrosos presentes en el código fuente del MÉTODO
+# (no del archivo completo, ver extraer_codigo_fuente_metodo).
 # ─────────────────────────────────────────────────────────────────────────────
 CWE_MAPPING = [
     {
@@ -62,8 +59,8 @@ CWE_MAPPING = [
     {
         "cwe_id": "CWE-89",
         "nombre": "SQL Injection",
-        "patrones": ["executeQuery", "prepareStatement", "createQuery",
-                      "nativeQuery", "createNativeQuery", "Statement"],
+        "patrones": ["executeQuery", "createQuery", "nativeQuery",
+                      "createNativeQuery", "Statement"],
         "descripcion": "Inyección de SQL que permite manipular la base de datos."
     },
     {
@@ -87,7 +84,6 @@ CWE_MAPPING = [
                       "FileReader", "FileWriter", "Paths.get", "resolve"],
         "descripcion": "Acceso a rutas de archivos fuera del directorio permitido."
     },
-    # --- NUEVOS CWE AGREGADOS ---
     {
         "cwe_id": "CWE-502",
         "nombre": "Deserialization of Untrusted Data",
@@ -125,11 +121,12 @@ CWE_MAPPING = [
         "descripcion": "Cross-Site Scripting (XSS). Reflejo de datos no sanitizados hacia el cliente."
     }
 ]
+
+
 def deducir_cwe(codigo_metodo: str) -> dict | None:
     """
     Analiza el código fuente de un método para detectar patrones de CWE.
     Retorna el CWE más probable o None si no se identifica ninguno.
-    El análisis es simple (búsqueda de tokens) para ser rápido y determinista.
     """
     coincidencias = []
     for regla in CWE_MAPPING:
@@ -140,7 +137,6 @@ def deducir_cwe(codigo_metodo: str) -> dict | None:
     if not coincidencias:
         return None
 
-    # Retornar el CWE con más coincidencias de patrones
     coincidencias.sort(key=lambda x: x[0], reverse=True)
     mejor = coincidencias[0][1]
     return {
@@ -149,52 +145,6 @@ def deducir_cwe(codigo_metodo: str) -> dict | None:
         "descripcion": mejor["descripcion"]
     }
 
-def calcular_profundidad_ast(nodo):
-    if not hasattr(nodo, 'children') or not nodo.children:
-        return 1
-    prof = 0
-    for hijo in nodo.children:
-        if isinstance(hijo, list):
-            for item in hijo:
-                if isinstance(item, javalang.tree.Node):
-                    prof = max(prof, calcular_profundidad_ast(item))
-        elif isinstance(hijo, javalang.tree.Node):
-            prof = max(prof, calcular_profundidad_ast(hijo))
-            
-    # Novedad: Limitar la profundidad para no penalizar lambdas o builders de Spring Boot
-    profundidad_real = 1 + prof
-    return min(profundidad_real, 12) # 12 es un techo seguro
-
-def extraer_features(metodo_nodo):
-    total_nodos = len(list(metodo_nodo.filter(javalang.tree.Node)))
-    profundidad = calcular_profundidad_ast(metodo_nodo)
-    llamadas_peligrosas = sum(
-        1 for _, inv in metodo_nodo.filter(javalang.tree.MethodInvocation)
-        if inv.member in FUNCIONES_PELIGROSAS
-    )
-    total_llamadas = len(list(metodo_nodo.filter(javalang.tree.MethodInvocation)))
-    num_ifs = len(list(metodo_nodo.filter(javalang.tree.IfStatement)))
-    num_loops = (
-        len(list(metodo_nodo.filter(javalang.tree.ForStatement))) +
-        len(list(metodo_nodo.filter(javalang.tree.WhileStatement))) +
-        len(list(metodo_nodo.filter(javalang.tree.DoStatement)))
-    )
-    num_catches = len(list(metodo_nodo.filter(javalang.tree.CatchClause)))
-    num_throws = len(list(metodo_nodo.filter(javalang.tree.ThrowStatement)))
-    num_variables = len(list(metodo_nodo.filter(javalang.tree.LocalVariableDeclaration)))
-
-    return {
-        'total_nodos': total_nodos,
-        'ast_depth': profundidad,
-        'llamadas_peligrosas': llamadas_peligrosas,
-        'total_llamadas': total_llamadas,
-        'num_ifs': num_ifs,
-        'num_loops': num_loops,
-        'num_catches': num_catches,
-        'num_throws': num_throws,
-        'num_variables': num_variables,
-        'num_literales': len(list(metodo_nodo.filter(javalang.tree.Literal)))
-    }
 
 # 4. Health Check — Para que el backend Java verifique disponibilidad
 @app.get("/health")
@@ -212,16 +162,17 @@ async def analizar_codigo(peticion: PeticionCodigo):
         raise HTTPException(status_code=503, detail="El modelo ML no está disponible. Contacte al administrador.")
 
     try:
-        # Parsear el código Java recibido
         arbol = javalang.parse.parse(peticion.codigo_fuente)
         metodos_analizados = []
 
         for _, metodo in arbol.filter(javalang.tree.MethodDeclaration):
-            features = extraer_features(metodo)
+            # Las mismas 13 features base que se usaron al entrenar el modelo
+            features = extraer_caracteristicas_metodo(metodo)
             features['metodo_nombre'] = metodo.name
-            # Preservar el código fuente del método para el análisis forense de CWE
-            # Extraemos las líneas del método usando las posiciones del AST
-            features['_codigo_metodo'] = peticion.codigo_fuente  # Se filtra antes de predecir
+            # Código SOLO del método (no del archivo completo) para el forense
+            features['_codigo_metodo'] = extraer_codigo_fuente_metodo(
+                peticion.codigo_fuente, metodo
+            )
             metodos_analizados.append(features)
 
         if not metodos_analizados:
@@ -233,33 +184,25 @@ async def analizar_codigo(peticion: PeticionCodigo):
                 "vulnerabilidades_detectadas": []
             }
 
-        # Convertir a DataFrame y calcular ratios
         df = pd.DataFrame(metodos_analizados)
-        df['ratio_peligrosas'] = df['llamadas_peligrosas'] / (df['total_llamadas'] + 1)
-        df['complejidad_relativa'] = (df['num_ifs'] + df['num_loops']) / (df['total_nodos'] + 1)
-        df['densidad_variables'] = df['num_variables'] / (df['total_nodos'] + 1)
-        df['ratio_manejo_errores'] = (df['num_catches'] + df['num_throws']) / (df['total_nodos'] + 1)
+        df = calcular_ratios(df)  # Agrega las 4 features de ratio
 
-        # Separar nombres de métodos y código fuente antes de predecir
         nombres_metodos = df['metodo_nombre'].tolist()
-        codigos_metodos = df['_codigo_metodo'].tolist()  # Para el análisis forense
-        X = df.drop(columns=['metodo_nombre', '_codigo_metodo'])
+        codigos_metodos = df['_codigo_metodo'].tolist()
 
-        # Predicción basada en probabilidades para ajustar la sensibilidad
+        # Seleccionar columnas en el orden EXACTO usado al entrenar
+        X = df[FEATURE_COLUMNS]
+
         probabilidades = modelo_rf.predict_proba(X)
 
         vulnerabilidades = []
-        UMBRAL_VULNERABILIDAD = 0.70  # 70% de certeza requerida para clasificar como VULNERABLE
+        UMBRAL_VULNERABILIDAD = 0.70
 
         for i, prob in enumerate(probabilidades):
-            prob_vulnerable = prob[1]  # Probabilidad de pertenecer a la clase 1 (Vulnerable)
+            prob_vulnerable = prob[1]
 
-            # Solo se reporta como riesgo si supera el umbral del 70%
             if prob_vulnerable >= UMBRAL_VULNERABILIDAD:
-                # ── MÓDULO FORENSE ──────────────────────────────────────────
-                # El Juez (ML) decidió que es vulnerable → el Forense deduce el CWE
                 cwe_info = deducir_cwe(codigos_metodos[i])
-                # ─────────────────────────────────────────────────────────────
 
                 entry = {
                     "metodo": nombres_metodos[i],
@@ -276,7 +219,6 @@ async def analizar_codigo(peticion: PeticionCodigo):
 
                 vulnerabilidades.append(entry)
 
-        # Respuesta estructurada para el pipeline de CI/CD
         es_seguro = len(vulnerabilidades) == 0
         return {
             "status": "completado",
@@ -286,13 +228,15 @@ async def analizar_codigo(peticion: PeticionCodigo):
             "vulnerabilidades_detectadas": vulnerabilidades
         }
 
-    except javalang.parser.JavaSyntaxError as e:
+    except javalang.parser.JavaSyntaxError:
         raise HTTPException(
             status_code=400,
             detail=f"Error de sintaxis en '{peticion.nombre_archivo}': El código Java enviado no es válido."
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error interno al analizar '{peticion.nombre_archivo}': {str(e)}")
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
